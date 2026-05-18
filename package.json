@@ -1,0 +1,46 @@
+{
+  "name": "@nekwebdev/pi-warden",
+  "version": "0.1.0",
+  "description": "Fresh-install bootstrap and Warden setup extension for Pi Agent",
+  "type": "module",
+  "files": [
+    "extensions/**/*.ts",
+    "!extensions/**/*.test.ts",
+    "prompts/**/*.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-agent",
+    "pi-warden",
+    "warden",
+    "bootstrap",
+    "setup"
+  ],
+  "author": "nekwebdev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nekwebdev/pi-warden.git"
+  },
+  "homepage": "https://github.com/nekwebdev/pi-warden#readme",
+  "bugs": {
+    "url": "https://github.com/nekwebdev/pi-warden/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "tsx": "^4.20.0"
+  },
+  "pi": {
+    "extensions": ["./extensions/pi-warden-core/index.ts"],
+    "prompts": ["./prompts/bootstrap.md"]
+  }
+}
