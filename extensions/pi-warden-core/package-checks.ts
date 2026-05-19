@@ -10,15 +10,38 @@ import {
 
 const GITHUB_HOST = "github.com";
 
+export type ExternalDependencyStatusKind = "canonical" | "accepted" | "missing";
+
+export interface ExternalDependencyStatus {
+	readonly dependency: ExternalDependency;
+	readonly installed: boolean;
+	readonly kind: ExternalDependencyStatusKind;
+	readonly mutable: boolean;
+	readonly matchedSource?: string;
+}
+
+export type ExternalDependencyStatusResult =
+	| {
+			readonly ok: true;
+			readonly statuses: ExternalDependencyStatus[];
+			readonly settings?: Record<string, unknown>;
+	  }
+	| { readonly ok: false; readonly settingsError: PiAgentSettingsError };
+
 export type MissingExternalDependenciesResult =
 	| { readonly ok: true; readonly missing: ExternalDependency[] }
 	| { readonly ok: false; readonly settingsError: PiAgentSettingsError };
 
-export function findMissingExternalDependencies(): MissingExternalDependenciesResult {
+export function getExternalDependencyStatuses(): ExternalDependencyStatusResult {
 	const result = readPiAgentSettings();
 	if (!result.ok) {
 		if (result.kind === "missing") {
-			return { ok: true, missing: [...EXTERNAL_DEPENDENCIES] };
+			return {
+				ok: true,
+				statuses: EXTERNAL_DEPENDENCIES.map((dependency) =>
+					buildMissingStatus(dependency),
+				),
+			};
 		}
 		return { ok: false, settingsError: result };
 	}
@@ -32,13 +55,67 @@ export function findMissingExternalDependencies(): MissingExternalDependenciesRe
 
 	return {
 		ok: true,
-		missing: EXTERNAL_DEPENDENCIES.filter(
-			(dependency) =>
-				!dependency.acceptedSources.some((source) =>
-					installedSources.has(source),
-				),
+		settings: result.settings,
+		statuses: EXTERNAL_DEPENDENCIES.map((dependency) =>
+			buildDependencyStatus(dependency, installedSources),
 		),
 	};
+}
+
+export function findMissingExternalDependencies(): MissingExternalDependenciesResult {
+	const result = getExternalDependencyStatuses();
+	if (!result.ok) return result;
+
+	return {
+		ok: true,
+		missing: result.statuses
+			.filter((status) => !status.installed)
+			.map((status) => status.dependency),
+	};
+}
+
+function buildMissingStatus(
+	dependency: ExternalDependency,
+): ExternalDependencyStatus {
+	return {
+		dependency,
+		installed: false,
+		kind: "missing",
+		mutable: true,
+	};
+}
+
+function buildDependencyStatus(
+	dependency: ExternalDependency,
+	installedSources: ReadonlySet<string>,
+): ExternalDependencyStatus {
+	const canonicalSource = normalizePackageSource(dependency.pkg);
+	if (canonicalSource && installedSources.has(canonicalSource)) {
+		return {
+			dependency,
+			installed: true,
+			kind: "canonical",
+			mutable: true,
+			matchedSource: canonicalSource,
+		};
+	}
+
+	const acceptedSource = dependency.acceptedSources.find((source) => {
+		const normalized = normalizePackageSource(source);
+		return normalized ? installedSources.has(normalized) : false;
+	});
+	if (acceptedSource) {
+		const normalized = normalizePackageSource(acceptedSource);
+		return {
+			dependency,
+			installed: true,
+			kind: "accepted",
+			mutable: false,
+			matchedSource: normalized,
+		};
+	}
+
+	return buildMissingStatus(dependency);
 }
 
 function getPackageSource(entry: unknown): string | undefined {
@@ -124,7 +201,7 @@ function isLocalPath(source: string): boolean {
 }
 
 function githubRepoId(owner: string, repo: string): string {
-	return `repo:${GITHUB_HOST}/${owner.toLowerCase()}/${stripGitSuffix(repo).toLowerCase()}`;
+	return `git:${GITHUB_HOST}/${owner.toLowerCase()}/${stripGitSuffix(repo).toLowerCase()}`;
 }
 
 function stripGitSuffix(value: string): string {

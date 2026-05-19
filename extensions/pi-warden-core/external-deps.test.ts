@@ -10,7 +10,7 @@ describe("EXTERNAL_DEPENDENCIES", () => {
 		);
 	});
 
-	it("accepts explicit npm, repository, and local source identifiers", () => {
+	it("keeps canonical install targets separate from accepted user-managed sources", () => {
 		const caveman = EXTERNAL_DEPENDENCIES.find(
 			(dependency) => dependency.pkg === "npm:pi-caveman",
 		);
@@ -19,24 +19,22 @@ describe("EXTERNAL_DEPENDENCIES", () => {
 		);
 
 		assert.deepEqual(caveman?.acceptedSources, [
-			"npm:pi-caveman",
-			"repo:github.com/jonjonrankin/pi-caveman",
+			"git:github.com/jonjonrankin/pi-caveman",
 			"local:pi-caveman",
 		]);
 		assert.deepEqual(contextMode?.acceptedSources, [
-			"npm:context-mode",
-			"repo:github.com/mksglu/context-mode",
+			"git:github.com/mksglu/context-mode",
 			"local:context-mode",
 		]);
+		assert.equal(caveman?.acceptedSources.includes("npm:pi-caveman"), false);
+		assert.equal(
+			contextMode?.acceptedSources.includes("npm:context-mode"),
+			false,
+		);
 	});
 
-	it("self-matches package source entries and describes capabilities", () => {
+	it("describes capabilities for every external dependency", () => {
 		for (const dependency of EXTERNAL_DEPENDENCIES) {
-			assert.equal(
-				dependency.acceptedSources.includes(dependency.pkg),
-				true,
-				dependency.pkg,
-			);
 			assert.equal(dependency.provides.trim().length > 0, true, dependency.pkg);
 		}
 

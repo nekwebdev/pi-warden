@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { PI_AGENT_SETTINGS_RELATIVE } from "./constants.js";
@@ -28,6 +28,14 @@ export type PiAgentSettingsError = Extract<
 	{ readonly ok: false }
 >;
 
+export interface PiWardenSettings {
+	readonly doNotWarnForMissingDependencies?: boolean;
+}
+
+export type PiAgentSettingsWriteResult =
+	| { readonly ok: true }
+	| { readonly ok: false; readonly settingsError: PiAgentSettingsError };
+
 export function getPiAgentSettingsPath(): string {
 	if (process.env.PI_WARDEN_TEST_HOME) {
 		return join(process.env.PI_WARDEN_TEST_HOME, ...PI_AGENT_SETTINGS_RELATIVE);
@@ -54,6 +62,57 @@ export function formatPiAgentSettingsError(
 	error: PiAgentSettingsError,
 ): string {
 	return `${error.path}: ${error.message}`;
+}
+
+export function getPiWardenSettings(
+	settings: Record<string, unknown> | undefined,
+): PiWardenSettings {
+	if (!settings) return {};
+	const value = settings.piWarden;
+	if (!isPlainObject(value)) return {};
+
+	return typeof value.doNotWarnForMissingDependencies === "boolean"
+		? {
+				doNotWarnForMissingDependencies: value.doNotWarnForMissingDependencies,
+			}
+		: {};
+}
+
+export function writePiWardenSettings(
+	patch: PiWardenSettings,
+): PiAgentSettingsWriteResult {
+	const result = readPiAgentSettings();
+	if (!result.ok) return { ok: false, settingsError: result };
+
+	const current = isPlainObject(result.settings.piWarden)
+		? result.settings.piWarden
+		: {};
+	const next = {
+		...result.settings,
+		piWarden: {
+			...current,
+			...patch,
+		},
+	};
+
+	try {
+		writeFileSync(
+			getPiAgentSettingsPath(),
+			`${JSON.stringify(next, null, 2)}\n`,
+			"utf-8",
+		);
+		return { ok: true };
+	} catch (error) {
+		return {
+			ok: false,
+			settingsError: {
+				ok: false,
+				kind: "unreadable",
+				path: getPiAgentSettingsPath(),
+				message: toErrorMessage(error),
+			},
+		};
+	}
 }
 
 export function readPiAgentSettings(): PiAgentSettingsReadResult {

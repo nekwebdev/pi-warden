@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { getPiAgentSettingsPath, readPiAgentSettings } from "./utils.js";
+import {
+	getPiAgentSettingsPath,
+	getPiWardenSettings,
+	readPiAgentSettings,
+	writePiWardenSettings,
+} from "./utils.js";
 
 function withTempSettings(contents: unknown, test: () => void): void {
 	const originalHome = process.env.PI_WARDEN_TEST_HOME;
@@ -112,6 +124,58 @@ describe("getPiAgentSettingsPath", () => {
 
 			assert.equal(result.ok, true);
 			if (result.ok) assert.deepEqual(result.packages, ["npm:pi-caveman"]);
+		});
+	});
+
+	it("reads Pi Warden settings from a namespaced object", () => {
+		assert.deepEqual(
+			getPiWardenSettings({
+				packages: [],
+				piWarden: { doNotWarnForMissingDependencies: true },
+			}),
+			{ doNotWarnForMissingDependencies: true },
+		);
+		assert.deepEqual(getPiWardenSettings({ packages: [], piWarden: true }), {});
+		assert.deepEqual(getPiWardenSettings(undefined), {});
+	});
+
+	it("writes Pi Warden settings while preserving packages and unknown fields", () => {
+		withTempSettings(
+			{
+				packages: ["npm:pi-caveman"],
+				other: { keep: true },
+				piWarden: { existing: "value" },
+			},
+			() => {
+				const result = writePiWardenSettings({
+					doNotWarnForMissingDependencies: true,
+				});
+
+				assert.deepEqual(result, { ok: true });
+				const written = JSON.parse(
+					readFileSync(getPiAgentSettingsPath(), "utf-8"),
+				);
+				assert.deepEqual(written, {
+					packages: ["npm:pi-caveman"],
+					other: { keep: true },
+					piWarden: {
+						existing: "value",
+						doNotWarnForMissingDependencies: true,
+					},
+				});
+			},
+		);
+	});
+
+	it("refuses Pi Warden settings writes when settings are missing", () => {
+		withTempSettings(undefined, () => {
+			const result = writePiWardenSettings({
+				doNotWarnForMissingDependencies: true,
+			});
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.settingsError.kind, "missing");
+			assert.equal(existsSync(getPiAgentSettingsPath()), false);
 		});
 	});
 });

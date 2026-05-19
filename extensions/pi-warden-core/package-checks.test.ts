@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
-import { findMissingExternalDependencies } from "./package-checks.js";
+import {
+	findMissingExternalDependencies,
+	getExternalDependencyStatuses,
+} from "./package-checks.js";
 import { getPiAgentSettingsPath } from "./utils.js";
 
 function withTestSettings(contents: unknown, test: () => void): void {
@@ -40,6 +43,26 @@ function missingPackages(): string[] {
 	return result.ok ? result.missing.map((dependency) => dependency.pkg) : [];
 }
 
+function dependencyStatuses(): Array<{
+	pkg: string;
+	installed: boolean;
+	kind: string;
+	mutable: boolean;
+	matchedSource?: string;
+}> {
+	const result = getExternalDependencyStatuses();
+	assert.equal(result.ok, true);
+	return result.ok
+		? result.statuses.map((status) => ({
+				pkg: status.dependency.pkg,
+				installed: status.installed,
+				kind: status.kind,
+				mutable: status.mutable,
+				matchedSource: status.matchedSource,
+			}))
+		: [];
+}
+
 describe("findMissingExternalDependencies", () => {
 	it("returns all dependencies when settings are missing", () => {
 		withTestSettings(undefined, () => {
@@ -47,6 +70,27 @@ describe("findMissingExternalDependencies", () => {
 				ok: true,
 				missing: [...EXTERNAL_DEPENDENCIES],
 			});
+		});
+	});
+
+	it("returns all statuses as mutable missing when settings are missing", () => {
+		withTestSettings(undefined, () => {
+			assert.deepEqual(dependencyStatuses(), [
+				{
+					pkg: "npm:pi-caveman",
+					installed: false,
+					kind: "missing",
+					mutable: true,
+					matchedSource: undefined,
+				},
+				{
+					pkg: "npm:context-mode",
+					installed: false,
+					kind: "missing",
+					mutable: true,
+					matchedSource: undefined,
+				},
+			]);
 		});
 	});
 
@@ -66,6 +110,32 @@ describe("findMissingExternalDependencies", () => {
 			assert.equal(result.ok, false);
 			if (!result.ok) assert.equal(result.settingsError.kind, "invalid-shape");
 		});
+	});
+
+	it("distinguishes canonical packages from accepted user-managed sources", () => {
+		withTestSettings(
+			{
+				packages: ["npm:pi-caveman", "git:github.com/mksglu/context-mode"],
+			},
+			() => {
+				assert.deepEqual(dependencyStatuses(), [
+					{
+						pkg: "npm:pi-caveman",
+						installed: true,
+						kind: "canonical",
+						mutable: true,
+						matchedSource: "npm:pi-caveman",
+					},
+					{
+						pkg: "npm:context-mode",
+						installed: true,
+						kind: "accepted",
+						mutable: false,
+						matchedSource: "git:github.com/mksglu/context-mode",
+					},
+				]);
+			},
+		);
 	});
 
 	it("reads string and object-form package source entries", () => {
@@ -100,6 +170,10 @@ describe("findMissingExternalDependencies", () => {
 					ok: true,
 					missing: [],
 				});
+				assert.deepEqual(
+					dependencyStatuses().map((status) => status.kind),
+					["accepted", "accepted"],
+				);
 			},
 		);
 	});

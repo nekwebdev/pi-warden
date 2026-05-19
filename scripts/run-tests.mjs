@@ -9,6 +9,7 @@ const tests = [
 	"extensions/pi-warden-core/pi-installer.test.ts",
 	"extensions/pi-warden-core/session-hooks.test.ts",
 	"extensions/pi-warden-core/setup-command.test.ts",
+	"extensions/pi-warden-core/setup-panel.test.ts",
 	"extensions/pi-warden-core/utils.test.ts",
 ];
 

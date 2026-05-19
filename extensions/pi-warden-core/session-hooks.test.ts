@@ -181,4 +181,57 @@ describe("session hooks", () => {
 			assert.doesNotMatch(warning, /pi-caveman, context-mode/);
 		});
 	});
+
+	it("suppresses missing dependency warnings when Pi Warden preference is enabled", async () => {
+		await withTestSettings(
+			{
+				packages: [],
+				piWarden: { doNotWarnForMissingDependencies: true },
+			},
+			async () => {
+				const { pi, handlers } = createMockPi();
+				registerSessionHooks(pi as unknown as ExtensionAPI);
+				const ctx = { hasUI: true, ui: { notify: mock.fn() } };
+
+				await getSessionStartHandler(handlers)({}, ctx);
+
+				assert.equal(ctx.ui.notify.mock.calls.length, 0);
+			},
+		);
+	});
+
+	it("warns when suppression preference is disabled", async () => {
+		await withTestSettings(
+			{
+				packages: [],
+				piWarden: { doNotWarnForMissingDependencies: false },
+			},
+			async () => {
+				const { pi, handlers } = createMockPi();
+				registerSessionHooks(pi as unknown as ExtensionAPI);
+				const ctx = { hasUI: true, ui: { notify: mock.fn() } };
+
+				await getSessionStartHandler(handlers)({}, ctx);
+
+				assert.equal(ctx.ui.notify.mock.calls.length, 1);
+				assert.match(
+					String(ctx.ui.notify.mock.calls[0].arguments[0]),
+					/pi-caveman/,
+				);
+			},
+		);
+	});
+
+	it("does not suppress corrupt settings errors", async () => {
+		await withRawTestSettings("{not json", async () => {
+			const { pi, handlers } = createMockPi();
+			registerSessionHooks(pi as unknown as ExtensionAPI);
+			const ctx = { hasUI: true, ui: { notify: mock.fn() } };
+
+			await getSessionStartHandler(handlers)({}, ctx);
+
+			const warning = String(ctx.ui.notify.mock.calls[0].arguments[0]);
+			assert.match(warning, /cannot read Pi settings/i);
+		});
+	});
 });
