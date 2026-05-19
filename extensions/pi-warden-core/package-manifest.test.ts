@@ -53,9 +53,13 @@ describe("package pi resources", () => {
 			/^---\ndescription: Bootstrap a fresh Pi Warden install\nargument-hint: "\[goal\]"\n---/,
 		);
 		assert.match(body, /\/warden-setup/);
+		assert.match(body, /setup control panel|control panel Update/i);
 		assert.match(body, /npm:pi-caveman/);
 		assert.match(body, /npm:context-mode/);
 		assert.match(body, /restart Pi/i);
-		assert.match(body, /Do not copy secrets|explicit confirmation/i);
+		assert.match(
+			body,
+			/Do not copy secrets|explicit confirmation|Update action/i,
+		);
 	});
 });

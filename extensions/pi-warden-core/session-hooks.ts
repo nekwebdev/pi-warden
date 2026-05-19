@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DISPLAY_NAME, SETUP_COMMAND } from "./constants.js";
-import { findMissingExternalDependencies } from "./package-checks.js";
-import { formatPiAgentSettingsError } from "./utils.js";
+import { getExternalDependencyStatuses } from "./package-checks.js";
+import { formatPiAgentSettingsError, getPiWardenSettings } from "./utils.js";
 
 type UI = {
 	notify: (message: string, severity: "info" | "warning" | "error") => void;
@@ -24,7 +24,7 @@ async function onSessionStart(ctx: SessionStartContext): Promise<void> {
 }
 
 function warnMissingExternalDependencies(ui: UI): void {
-	const result = findMissingExternalDependencies();
+	const result = getExternalDependencyStatuses();
 	if (!result.ok) {
 		const warningKey = `settings-error:${result.settingsError.kind}:${result.settingsError.message}`;
 		if (warningKey === lastMissingDependencyWarningKey) return;
@@ -38,21 +38,27 @@ function warnMissingExternalDependencies(ui: UI): void {
 		return;
 	}
 
-	const { missing } = result;
+	const missing = result.statuses.filter((status) => !status.installed);
 	if (missing.length === 0) {
 		lastMissingDependencyWarningKey = undefined;
 		return;
 	}
 
+	const piWarden = getPiWardenSettings(result.settings);
+	if (piWarden.doNotWarnForMissingDependencies === true) {
+		lastMissingDependencyWarningKey = undefined;
+		return;
+	}
+
 	const warningKey = missing
-		.map((dependency) => dependency.pkg)
+		.map((status) => status.dependency.pkg)
 		.sort()
 		.join("|");
 	if (warningKey === lastMissingDependencyWarningKey) return;
 	lastMissingDependencyWarningKey = warningKey;
 
 	const list = missing
-		.map((dependency) => dependency.pkg.replace(/^npm:/, ""))
+		.map((status) => status.dependency.pkg.replace(/^npm:/, ""))
 		.join(", ");
 	ui.notify(
 		`${DISPLAY_NAME} setup needs ${missing.length} external package(s): ${list}. Run /${SETUP_COMMAND} to install them.`,

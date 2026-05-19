@@ -11,8 +11,7 @@ export const EXTERNAL_DEPENDENCIES: readonly ExternalDependency[] = [
 	{
 		pkg: "npm:pi-caveman",
 		acceptedSources: [
-			"npm:pi-caveman",
-			"repo:github.com/jonjonrankin/pi-caveman",
+			"git:github.com/jonjonrankin/pi-caveman",
 			"local:pi-caveman",
 		],
 		provides: "caveman response-style extension and /caveman command",
@@ -20,8 +19,7 @@ export const EXTERNAL_DEPENDENCIES: readonly ExternalDependency[] = [
 	{
 		pkg: "npm:context-mode",
 		acceptedSources: [
-			"npm:context-mode",
-			"repo:github.com/mksglu/context-mode",
+			"git:github.com/mksglu/context-mode",
 			"local:context-mode",
 		],
 		provides: "context-mode tools, MCP bridge, skills, and /ctx-* commands",

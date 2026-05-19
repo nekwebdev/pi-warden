@@ -18,12 +18,20 @@ Run:
 /warden-setup
 ```
 
-`/warden-setup` detects missing external Pi packages, previews changes, asks for confirmation, then installs:
+`/warden-setup` opens a Pi Warden setup control panel for external Pi packages:
 
 - `npm:pi-caveman`
 - `npm:context-mode`
 
-After any successful install, restart Pi so newly installed external packages load.
+Dependency rows show desired canonical configuration plus detected source state:
+
+- checked mutable canonical rows are enabled; Update installs them when missing and leaves them installed when already present;
+- unchecked mutable canonical rows are disabled; Update removes them when currently installed and leaves them missing when already absent;
+- checked dim rows are user-managed accepted sources, such as GitHub or local installs, and Pi Warden will not install or remove them.
+
+Use ↑/↓ to move, Space/Enter to toggle mutable rows or the warning preference, and Update to apply choices. Update installs checked missing canonical packages with `pi install`, removes unchecked installed canonical packages with `pi remove`, and saves the "Do not warn for missing dependencies" preference when Pi settings are valid. The warning toggle defaults off and suppresses only missing-dependency warnings, not corrupt settings errors.
+
+After any successful install or remove, restart Pi so external package changes load.
 
 ## Package resources
 
@@ -50,4 +58,4 @@ Use `/bootstrap` for fresh setup guidance after package resources load.
 
 ## Safety
 
-Setup is confirmation-first. It reads Pi settings to detect missing packages, but does not run `pi install` until you confirm. Pi owns settings persistence after each successful install.
+Setup is explicit-update-first. It reads Pi settings to detect external packages and warning preference state, but it does not run `pi install`, run `pi remove`, or mutate Pi Warden settings until you choose Update. Pi owns package persistence after each successful install or remove. Pi Warden only writes its namespaced `piWarden.doNotWarnForMissingDependencies` preference when the settings file is valid.

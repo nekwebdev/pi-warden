@@ -11,15 +11,30 @@ export function spawnPiInstall(
 	pkg: string,
 	timeoutMs: number,
 ): Promise<PiInstallResult> {
+	return runPiPackageCommand("install", pkg, timeoutMs);
+}
+
+export function spawnPiRemove(
+	pkg: string,
+	timeoutMs: number,
+): Promise<PiInstallResult> {
+	return runPiPackageCommand("remove", pkg, timeoutMs);
+}
+
+function runPiPackageCommand(
+	command: "install" | "remove",
+	pkg: string,
+	timeoutMs: number,
+): Promise<PiInstallResult> {
 	return new Promise((resolve) => {
 		const isWindows = process.platform === "win32";
 		const [cmd, args, spawnOpts] = isWindows
 			? ([
 					"cmd.exe",
-					["/c", "pi", "install", pkg],
+					["/c", "pi", command, pkg],
 					{ windowsHide: true },
 				] as const)
-			: (["pi", ["install", pkg], {}] as const);
+			: (["pi", [command, pkg], {}] as const);
 
 		let settled = false;
 		let closed = false;
