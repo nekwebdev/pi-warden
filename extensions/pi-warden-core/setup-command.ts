@@ -61,7 +61,6 @@ type SetupUpdateSummary = {
 };
 
 const MSG_INTERACTIVE_ONLY = `/${SETUP_COMMAND} requires interactive mode`;
-const MSG_CANCELLED = `/${SETUP_COMMAND} cancelled`;
 const MSG_RESTART =
 	"Restart your Pi session to load newly installed external packages.";
 const MSG_SETTINGS_ERROR_PREFIX = `${DISPLAY_NAME} setup cannot read Pi settings`;
@@ -122,10 +121,7 @@ async function handleSetupCommand(
 		piWarden.doNotWarnForMissingDependencies === true,
 		piWarden.useNerdGlyphs === true,
 	);
-	if (panelResult.action === "cancel") {
-		ctx.ui.notify(MSG_CANCELLED, "info");
-		return;
-	}
+	if (panelResult.action === "cancel") return;
 
 	const updateResult = await applySetupUpdate(
 		ctx.ui,
@@ -189,38 +185,42 @@ export async function applySetupUpdate(
 	const currentSettings = getPiWardenSettings(revalidated.settings);
 	const currentPreference =
 		currentSettings.doNotWarnForMissingDependencies === true;
+	const currentGlyphPref = currentSettings.useNerdGlyphs === true;
+	const preferenceChanged =
+		currentPreference !== request.suppressMissingWarnings;
+	const glyphPreferenceChanged = currentGlyphPref !== request.useNerdGlyphs;
 	let preferenceUpdated = false;
 	let preferenceValueAfter = currentPreference;
-	if (currentPreference !== request.suppressMissingWarnings) {
-		const result = writePiWardenSettings({
-			doNotWarnForMissingDependencies: request.suppressMissingWarnings,
-		});
-		if (result.ok) {
-			preferenceUpdated = true;
-			preferenceValueAfter = request.suppressMissingWarnings;
-		} else {
-			failed.push({
-				operation: "settings",
-				pkg: "piWarden.doNotWarnForMissingDependencies",
-				error: formatPiAgentSettingsError(result.settingsError),
-			});
-		}
-	}
-
-	const currentGlyphPref = currentSettings.useNerdGlyphs === true;
 	let glyphPreferenceUpdated = false;
 	let glyphPreferenceValueAfter = currentGlyphPref;
-	if (currentGlyphPref !== request.useNerdGlyphs) {
+
+	if (preferenceChanged || glyphPreferenceChanged) {
 		const result = writePiWardenSettings({
-			useNerdGlyphs: request.useNerdGlyphs,
+			...(preferenceChanged
+				? { doNotWarnForMissingDependencies: request.suppressMissingWarnings }
+				: {}),
+			...(glyphPreferenceChanged
+				? { useNerdGlyphs: request.useNerdGlyphs }
+				: {}),
 		});
 		if (result.ok) {
-			glyphPreferenceUpdated = true;
-			glyphPreferenceValueAfter = request.useNerdGlyphs;
+			if (preferenceChanged) {
+				preferenceUpdated = true;
+				preferenceValueAfter = request.suppressMissingWarnings;
+			}
+			if (glyphPreferenceChanged) {
+				glyphPreferenceUpdated = true;
+				glyphPreferenceValueAfter = request.useNerdGlyphs;
+			}
 		} else {
 			failed.push({
 				operation: "settings",
-				pkg: "piWarden.useNerdGlyphs",
+				pkg:
+					preferenceChanged && glyphPreferenceChanged
+						? "piWarden"
+						: preferenceChanged
+							? "piWarden.doNotWarnForMissingDependencies"
+							: "piWarden.useNerdGlyphs",
 				error: formatPiAgentSettingsError(result.settingsError),
 			});
 		}

@@ -206,10 +206,7 @@ describe("/warden-setup", () => {
 
 				assert.equal(ctx.ui.confirm.mock.calls.length, 0);
 				assert.equal(ctx.ui.custom.mock.calls.length, 1);
-				assert.match(
-					String(ctx.ui.notify.mock.calls.at(-1)?.arguments[0]),
-					/cancelled/,
-				);
+				assert.equal(ctx.ui.notify.mock.calls.length, 0);
 			},
 		);
 	});

@@ -5,8 +5,9 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { getPanelGlyphs } from "./glyphs.js";
+import { getPanelGlyphs, renderPanelBorder } from "./glyphs.js";
 import type { ExternalDependencyStatus } from "./package-checks.js";
+import { writePiWardenSettings } from "./utils.js";
 import type {
 	SetupDependencyChoice,
 	SetupUpdateRequest,
@@ -125,9 +126,9 @@ export async function showSetupPanel(
 					];
 				}
 				if (tab === "Display") {
-					return [{ kind: "nerd-glyphs-toggle" }, { kind: "update" }];
+					return [{ kind: "nerd-glyphs-toggle" }];
 				}
-				return [{ kind: "update" }];
+				return [];
 			}
 
 			function buildChoices(): SetupDependencyChoice[] {
@@ -138,9 +139,6 @@ export async function showSetupPanel(
 			}
 
 			function hasPendingChanges(): boolean {
-				if (suppressMissingWarnings !== initialSuppressMissingWarnings)
-					return true;
-				if (useNerdGlyphs !== initialUseNerdGlyphs) return true;
 				return statuses.some((status) => {
 					if (!status.mutable) return false;
 					const checked = checkedByPkg.get(status.dependency.pkg) === true;
@@ -161,7 +159,11 @@ export async function showSetupPanel(
 			function switchTab(delta: -1 | 1) {
 				activeTabIndex = (activeTabIndex + delta + TABS.length) % TABS.length;
 				const items = itemsForTab();
-				setSelected(Math.min(items.length - 1, Math.max(0, selectedIndex())));
+				setSelected(
+					items.length === 0
+						? 0
+						: Math.min(items.length - 1, Math.max(0, selectedIndex())),
+				);
 				refresh();
 			}
 
@@ -213,12 +215,18 @@ export async function showSetupPanel(
 					return;
 				}
 				if (item.kind === "warning-toggle") {
-					suppressMissingWarnings = !suppressMissingWarnings;
+					const next = !suppressMissingWarnings;
+					const result = writePiWardenSettings({
+						doNotWarnForMissingDependencies: next,
+					});
+					if (result.ok) suppressMissingWarnings = next;
 					refresh();
 					return;
 				}
 				if (item.kind === "nerd-glyphs-toggle") {
-					useNerdGlyphs = !useNerdGlyphs;
+					const next = !useNerdGlyphs;
+					const result = writePiWardenSettings({ useNerdGlyphs: next });
+					if (result.ok) useNerdGlyphs = next;
 					refresh();
 					return;
 				}
@@ -239,27 +247,59 @@ export async function showSetupPanel(
 				const lines: string[] = [];
 
 				const glyphs = getPanelGlyphs(useNerdGlyphs);
-				const borderColor = "borderAccent" as const;
-				const leftBorder = theme.fg(borderColor, glyphs.border.vertical);
-				const rightBorder = theme.fg(borderColor, glyphs.border.vertical);
+				const borderColor = "text" as const;
+				const titleColor = "border" as const;
 
 				const boxWidth = Math.max(4, width);
 				const innerWidth = Math.max(1, boxWidth - 2);
+				const border = renderPanelBorder(glyphs.border, innerWidth);
+				const leftBorder = theme.fg(borderColor, border.left);
+				const rightBorder = theme.fg(borderColor, border.right);
 
 				const padX = 2;
 				const innerContentWidth = Math.max(1, innerWidth - padX * 2);
 
-				const top = theme.fg(
-					borderColor,
-					glyphs.border.topLeft +
-						glyphs.border.horizontal.repeat(innerWidth) +
-						glyphs.border.topRight,
-				);
-				const bottom = theme.fg(
-					borderColor,
-					glyphs.border.bottomLeft +
-						glyphs.border.horizontal.repeat(innerWidth) +
-						glyphs.border.bottomRight,
+				const horizontal = (count: number): string =>
+					count <= 0
+						? ""
+						: theme.fg(borderColor, glyphs.border.horizontal.repeat(count));
+
+				const topBorderWithLabel = (label: string): string => {
+					const framedLabel = ` ${label} `;
+					const leftWidth = 2;
+					const rightWidth = Math.max(
+						0,
+						innerWidth - leftWidth - visibleWidth(framedLabel),
+					);
+					return (
+						theme.fg(borderColor, glyphs.border.topLeft) +
+						horizontal(leftWidth) +
+						theme.bold(theme.fg(titleColor, framedLabel)) +
+						horizontal(rightWidth) +
+						theme.fg(borderColor, glyphs.border.topRight)
+					);
+				};
+
+				const bottomBorderWithLabel = (label: string): string => {
+					const framedLabel = ` ${label} `;
+					const remainingWidth = Math.max(
+						0,
+						innerWidth - visibleWidth(framedLabel),
+					);
+					const leftWidth = Math.floor(remainingWidth / 2);
+					const rightWidth = remainingWidth - leftWidth;
+					return (
+						theme.fg(borderColor, glyphs.border.bottomLeft) +
+						horizontal(leftWidth) +
+						theme.fg("dim", framedLabel) +
+						horizontal(rightWidth) +
+						theme.fg(borderColor, glyphs.border.bottomRight)
+					);
+				};
+
+				const top = topBorderWithLabel("Pi Warden configuration");
+				const bottom = bottomBorderWithLabel(
+					"↑↓ navigate • Space/Enter select • Tab/Shift+Tab tab • Esc cancel",
 				);
 
 				const minBoxHeight =
@@ -267,48 +307,26 @@ export async function showSetupPanel(
 						? undefined
 						: Math.max(6, Math.ceil(lastTermHeight * 0.3));
 
-				const withPanelBg = (line: string): string => {
+				const withPanelPadding = (line: string): string => {
 					const truncated = truncateToWidth(line, innerContentWidth);
-					const padded =
+					return (
 						" ".repeat(padX) +
 						truncated +
 						" ".repeat(
 							Math.max(0, innerContentWidth - visibleWidth(truncated)),
 						) +
-						" ".repeat(padX);
-					return theme.bg("toolPendingBg", padded);
+						" ".repeat(padX)
+					);
 				};
 
 				const addInner = (line: string) =>
-					lines.push(leftBorder + withPanelBg(line) + rightBorder);
+					lines.push(leftBorder + withPanelPadding(line) + rightBorder);
 
 				lines.push(top);
 
-				addInner(theme.fg("accent", "Pi Warden configuration"));
+				addInner("");
 				addInner(renderTabStrip(theme));
 				addInner("");
-
-				const activeTab = tabId();
-				if (activeTab === "Packages") {
-					addInner(
-						theme.fg(
-							"dim",
-							"Space/Enter toggles rows. Update applies changes (install/remove).",
-						),
-					);
-					addInner("");
-				} else if (activeTab === "Display") {
-					addInner(
-						theme.fg(
-							"dim",
-							"Space/Enter toggles settings. Update saves changes.",
-						),
-					);
-					addInner("");
-				} else {
-					addInner(theme.fg("dim", "No options in this tab yet."));
-					addInner("");
-				}
 
 				const pointer = theme.bold(theme.fg("text", glyphs.pointer));
 				const styleActive = (active: boolean, value: string) =>
@@ -355,22 +373,10 @@ export async function showSetupPanel(
 
 				if (minBoxHeight !== undefined) {
 					const targetInnerLines = Math.max(1, minBoxHeight - 2);
-					const linesBeforeFooter = lines.length - 1;
-					const footerLines = 2;
-					const padCount = Math.max(
-						0,
-						targetInnerLines - (linesBeforeFooter + footerLines),
-					);
+					const currentInnerLines = lines.length - 1;
+					const padCount = Math.max(0, targetInnerLines - currentInnerLines);
 					for (let i = 0; i < padCount; i++) addInner("");
 				}
-
-				addInner("");
-				addInner(
-					theme.fg(
-						"dim",
-						`↑↓ navigate ${glyphs.bullet} Space/Enter toggle/select ${glyphs.bullet} Tab/Shift+Tab switch tabs ${glyphs.bullet} Esc cancel`,
-					),
-				);
 
 				lines.push(bottom);
 				cachedLines = lines;
@@ -395,11 +401,7 @@ export async function showSetupPanel(
 					? glyphs.checkboxOn
 					: glyphs.checkboxOff;
 				const row = `${mark} Do not warn for missing dependencies`;
-				if (suppressMissingWarnings === initialSuppressMissingWarnings)
-					return theme.fg("text", row);
-				return suppressMissingWarnings
-					? theme.fg("success", row)
-					: theme.fg("warning", row);
+				return theme.fg("text", row);
 			}
 
 			function renderNerdGlyphsToggleRow(
@@ -408,11 +410,7 @@ export async function showSetupPanel(
 			): string {
 				const mark = useNerdGlyphs ? glyphs.checkboxOn : glyphs.checkboxOff;
 				const row = `${mark} Use Nerd Glyphs, requires compatible Nerd font`;
-				if (useNerdGlyphs === initialUseNerdGlyphs)
-					return theme.fg("text", row);
-				return useNerdGlyphs
-					? theme.fg("success", row)
-					: theme.fg("warning", row);
+				return theme.fg("text", row);
 			}
 
 			function renderDependencyRow(
