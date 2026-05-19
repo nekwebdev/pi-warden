@@ -54,6 +54,7 @@ type SetupUpdateSummary = {
 		readonly error: string;
 	}>;
 	readonly preferenceUpdated: boolean;
+	readonly preferenceValueAfter: boolean;
 };
 
 const MSG_INTERACTIVE_ONLY = `/${SETUP_COMMAND} requires interactive mode`;
@@ -200,7 +201,13 @@ export async function applySetupUpdate(
 		}
 	}
 
-	return { installed, removed, failed, preferenceUpdated };
+	return {
+		installed,
+		removed,
+		failed,
+		preferenceUpdated,
+		preferenceValueAfter: request.suppressMissingWarnings,
+	};
 }
 
 export function buildPackageActions(
@@ -230,8 +237,13 @@ export function buildUpdateReport(summary: SetupUpdateSummary): string {
 		lines.push(`✓ Installed: ${summary.installed.join(", ")}`);
 	if (summary.removed.length > 0)
 		lines.push(`✓ Removed: ${summary.removed.join(", ")}`);
-	if (summary.preferenceUpdated)
-		lines.push("✓ Updated missing-dependency warning preference");
+	if (summary.preferenceUpdated) {
+		lines.push(
+			summary.preferenceValueAfter
+				? "✓ Saved: do not warn for missing dependencies"
+				: "✓ Saved: warn for missing dependencies",
+		);
+	}
 	if (summary.failed.length > 0) {
 		lines.push("✗ Failed:");
 		for (const { operation, pkg, error } of summary.failed)

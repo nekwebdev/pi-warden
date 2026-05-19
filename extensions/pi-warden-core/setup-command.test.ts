@@ -334,7 +334,7 @@ describe("/warden-setup", () => {
 				const report = String(ctx.ui.notify.mock.calls.at(-1)?.arguments[0]);
 				assert.match(report, /Installed: npm:context-mode/);
 				assert.match(report, /Removed: npm:pi-caveman/);
-				assert.match(report, /Updated missing-dependency warning preference/);
+				assert.match(report, /Saved: do not warn for missing dependencies/);
 			},
 		);
 	});
