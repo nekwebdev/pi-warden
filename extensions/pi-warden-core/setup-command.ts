@@ -38,6 +38,7 @@ export type SetupDependencyChoice = {
 export type SetupUpdateRequest = {
 	readonly choices: readonly SetupDependencyChoice[];
 	readonly suppressMissingWarnings: boolean;
+	readonly useNerdGlyphs: boolean;
 };
 
 type PackageAction = {
@@ -55,6 +56,8 @@ type SetupUpdateSummary = {
 	}>;
 	readonly preferenceUpdated: boolean;
 	readonly preferenceValueAfter: boolean;
+	readonly glyphPreferenceUpdated: boolean;
+	readonly glyphPreferenceValueAfter: boolean;
 };
 
 const MSG_INTERACTIVE_ONLY = `/${SETUP_COMMAND} requires interactive mode`;
@@ -112,11 +115,12 @@ async function handleSetupCommand(
 		return;
 	}
 
+	const piWarden = getPiWardenSettings(previewResult.settings);
 	const panelResult = await showSetupPanel(
 		ctx.ui,
 		previewResult.statuses,
-		getPiWardenSettings(previewResult.settings)
-			.doNotWarnForMissingDependencies === true,
+		piWarden.doNotWarnForMissingDependencies === true,
+		piWarden.useNerdGlyphs === true,
 	);
 	if (panelResult.action === "cancel") {
 		ctx.ui.notify(MSG_CANCELLED, "info");
@@ -182,20 +186,41 @@ export async function applySetupUpdate(
 		}
 	}
 
+	const currentSettings = getPiWardenSettings(revalidated.settings);
 	const currentPreference =
-		getPiWardenSettings(revalidated.settings)
-			.doNotWarnForMissingDependencies === true;
+		currentSettings.doNotWarnForMissingDependencies === true;
 	let preferenceUpdated = false;
+	let preferenceValueAfter = currentPreference;
 	if (currentPreference !== request.suppressMissingWarnings) {
 		const result = writePiWardenSettings({
 			doNotWarnForMissingDependencies: request.suppressMissingWarnings,
 		});
 		if (result.ok) {
 			preferenceUpdated = true;
+			preferenceValueAfter = request.suppressMissingWarnings;
 		} else {
 			failed.push({
 				operation: "settings",
 				pkg: "piWarden.doNotWarnForMissingDependencies",
+				error: formatPiAgentSettingsError(result.settingsError),
+			});
+		}
+	}
+
+	const currentGlyphPref = currentSettings.useNerdGlyphs === true;
+	let glyphPreferenceUpdated = false;
+	let glyphPreferenceValueAfter = currentGlyphPref;
+	if (currentGlyphPref !== request.useNerdGlyphs) {
+		const result = writePiWardenSettings({
+			useNerdGlyphs: request.useNerdGlyphs,
+		});
+		if (result.ok) {
+			glyphPreferenceUpdated = true;
+			glyphPreferenceValueAfter = request.useNerdGlyphs;
+		} else {
+			failed.push({
+				operation: "settings",
+				pkg: "piWarden.useNerdGlyphs",
 				error: formatPiAgentSettingsError(result.settingsError),
 			});
 		}
@@ -206,7 +231,9 @@ export async function applySetupUpdate(
 		removed,
 		failed,
 		preferenceUpdated,
-		preferenceValueAfter: request.suppressMissingWarnings,
+		preferenceValueAfter,
+		glyphPreferenceUpdated,
+		glyphPreferenceValueAfter,
 	};
 }
 
@@ -242,6 +269,13 @@ export function buildUpdateReport(summary: SetupUpdateSummary): string {
 			summary.preferenceValueAfter
 				? "✓ Saved: do not warn for missing dependencies"
 				: "✓ Saved: warn for missing dependencies",
+		);
+	}
+	if (summary.glyphPreferenceUpdated) {
+		lines.push(
+			summary.glyphPreferenceValueAfter
+				? "✓ Saved: nerd glyphs enabled"
+				: "✓ Saved: nerd glyphs disabled",
 		);
 	}
 	if (summary.failed.length > 0) {

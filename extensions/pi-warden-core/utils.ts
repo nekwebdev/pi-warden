@@ -30,6 +30,7 @@ export type PiAgentSettingsError = Extract<
 
 export interface PiWardenSettings {
 	readonly doNotWarnForMissingDependencies?: boolean;
+	readonly useNerdGlyphs?: boolean;
 }
 
 export type PiAgentSettingsWriteResult =
@@ -71,11 +72,17 @@ export function getPiWardenSettings(
 	const value = settings.piWarden;
 	if (!isPlainObject(value)) return {};
 
-	return typeof value.doNotWarnForMissingDependencies === "boolean"
-		? {
-				doNotWarnForMissingDependencies: value.doNotWarnForMissingDependencies,
-			}
-		: {};
+	return {
+		...(typeof value.doNotWarnForMissingDependencies === "boolean"
+			? {
+					doNotWarnForMissingDependencies:
+						value.doNotWarnForMissingDependencies,
+				}
+			: {}),
+		...(typeof value.useNerdGlyphs === "boolean"
+			? { useNerdGlyphs: value.useNerdGlyphs }
+			: {}),
+	};
 }
 
 export function writePiWardenSettings(

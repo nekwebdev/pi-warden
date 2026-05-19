@@ -59,7 +59,8 @@ describe("setup panel", () => {
 							component.handleInput?.(" ");
 							component.handleInput?.("\x1b[B");
 							component.handleInput?.(" ");
-							component.handleInput?.("\x1b[B");
+							component.handleInput?.("\t");
+							component.handleInput?.(" ");
 							component.handleInput?.("\x1b[B");
 							component.handleInput?.("\r");
 						});
@@ -70,6 +71,7 @@ describe("setup panel", () => {
 					ui,
 					statusesResult.ok ? statusesResult.statuses : [],
 					false,
+					false,
 				);
 
 				assert.deepEqual(result, {
@@ -79,6 +81,7 @@ describe("setup panel", () => {
 						{ pkg: "npm:context-mode", checked: true },
 					],
 					suppressMissingWarnings: false,
+					useNerdGlyphs: true,
 				});
 			},
 		);
