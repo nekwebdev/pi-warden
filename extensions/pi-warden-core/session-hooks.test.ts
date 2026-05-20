@@ -143,7 +143,9 @@ describe("session hooks", () => {
 
 	it("does not warn when external dependencies are configured", async () => {
 		await withTestSettings(
-			{ packages: ["npm:pi-caveman", "npm:context-mode"] },
+			{
+				packages: ["npm:pi-caveman", "npm:context-mode", "npm:pi-mcp-adapter"],
+			},
 			async () => {
 				const { pi, handlers } = createMockPi();
 				registerSessionHooks(pi as unknown as ExtensionAPI);

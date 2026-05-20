@@ -9,7 +9,7 @@ Context:
 
 - Package: `@nekwebdev/pi-warden`
 - Setup command: `/warden-setup` opens the Pi Warden setup control panel
-- External Pi packages managed by setup: `npm:pi-caveman`, `npm:context-mode`
+- External Pi packages managed by setup: `npm:pi-caveman`, `npm:context-mode`, `npm:pi-mcp-adapter`
 - Use the setup panel Update action to install checked missing canonical packages, remove unchecked canonical packages, and save the missing-dependency warning preference.
 - User-managed accepted sources, such as GitHub or local installs, appear installed but disabled in setup.
 - After successful setup installs or removes packages, restart Pi so external package changes load.

@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it, mock } from "node:test";
+import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
 import { getExternalDependencyStatuses } from "./package-checks.js";
 import { showSetupPanel, type SetupPanelUI } from "./setup-panel.js";
 import { getPiAgentSettingsPath } from "./utils.js";
@@ -80,11 +81,23 @@ describe("setup panel", () => {
 								undefined,
 								resolve,
 							);
+							const rendered =
+								(component as { render?: (width: number) => string[] })
+									.render?.(120)
+									.join("\n") ?? "";
+							for (const dependency of EXTERNAL_DEPENDENCIES) {
+								assert.equal(
+									rendered.includes(dependency.pkg),
+									true,
+									`${dependency.pkg} should render in setup panel`,
+								);
+							}
 							component.handleInput?.(" ");
 							component.handleInput?.("\x1b[B");
 							component.handleInput?.(" ");
-							component.handleInput?.("\x1b[B");
-							component.handleInput?.("\x1b[B");
+							for (let i = 0; i < EXTERNAL_DEPENDENCIES.length; i++) {
+								component.handleInput?.("\x1b[B");
+							}
 							component.handleInput?.("\r");
 						});
 					}),
@@ -97,12 +110,15 @@ describe("setup panel", () => {
 					false,
 				);
 
+				const expectedChecked = new Set(
+					EXTERNAL_DEPENDENCIES.slice(0, 2).map((dependency) => dependency.pkg),
+				);
 				assert.deepEqual(result, {
 					action: "update",
-					choices: [
-						{ pkg: "npm:pi-caveman", checked: true },
-						{ pkg: "npm:context-mode", checked: true },
-					],
+					choices: EXTERNAL_DEPENDENCIES.map((dependency) => ({
+						pkg: dependency.pkg,
+						checked: expectedChecked.has(dependency.pkg),
+					})),
 					suppressMissingWarnings: false,
 					useNerdGlyphs: false,
 				});

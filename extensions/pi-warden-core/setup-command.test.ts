@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -11,18 +12,25 @@ import { dirname, join } from "node:path";
 import { describe, it, mock } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { SETUP_COMMAND } from "./constants.js";
+import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
 import { getExternalDependencyStatuses } from "./package-checks.js";
 import {
 	applySetupUpdate,
 	buildPackageActions,
 	registerSetupCommand,
 } from "./setup-command.js";
-import { getPiAgentSettingsPath } from "./utils.js";
+import { getMcpJsonPath, getPiAgentSettingsPath } from "./utils.js";
 
 type MockCommand = {
 	description: string;
 	handler: (args: string, ctx: SetupContext) => Promise<void>;
 };
+
+type TestDependencyChoice = {
+	readonly pkg: string;
+	readonly checked: boolean;
+};
+
 type SetupContext = {
 	hasUI: boolean;
 	ui: {
@@ -31,6 +39,16 @@ type SetupContext = {
 		custom: ReturnType<typeof mock.fn>;
 	};
 };
+
+function choicesWithChecked(
+	checkedPkgs: readonly string[],
+): TestDependencyChoice[] {
+	const checked = new Set(checkedPkgs);
+	return EXTERNAL_DEPENDENCIES.map((dependency) => ({
+		pkg: dependency.pkg,
+		checked: checked.has(dependency.pkg),
+	}));
+}
 
 function createMockPi() {
 	const commands = new Map<string, MockCommand>();
@@ -221,10 +239,10 @@ describe("/warden-setup", () => {
 				assert.equal(statusesResult.ok, true);
 				assert.deepEqual(
 					statusesResult.ok
-						? buildPackageActions(statusesResult.statuses, [
-								{ pkg: "npm:pi-caveman", checked: false },
-								{ pkg: "npm:context-mode", checked: false },
-							])
+						? buildPackageActions(
+								statusesResult.statuses,
+								choicesWithChecked([]),
+							)
 						: [],
 					[{ operation: "remove", pkg: "npm:pi-caveman" }],
 				);
@@ -259,10 +277,7 @@ describe("/warden-setup", () => {
 				const summary = await applySetupUpdate(
 					ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
 					{
-						choices: [
-							{ pkg: "npm:pi-caveman", checked: false },
-							{ pkg: "npm:context-mode", checked: true },
-						],
+						choices: choicesWithChecked(["npm:context-mode"]),
 						suppressMissingWarnings: true,
 						useNerdGlyphs: true,
 					},
@@ -273,6 +288,8 @@ describe("/warden-setup", () => {
 				assert.deepEqual(summary, {
 					installed: ["npm:context-mode"],
 					removed: ["npm:pi-caveman"],
+					mcpAdded: ["context-mode"],
+					mcpRemoved: [],
 					failed: [],
 					preferenceUpdated: true,
 					preferenceValueAfter: true,
@@ -325,10 +342,7 @@ describe("/warden-setup", () => {
 					hasUI: true,
 					customResult: {
 						action: "update",
-						choices: [
-							{ pkg: "npm:pi-caveman", checked: false },
-							{ pkg: "npm:context-mode", checked: true },
-						],
+						choices: choicesWithChecked(["npm:context-mode"]),
 						suppressMissingWarnings: true,
 						useNerdGlyphs: true,
 					},
@@ -340,6 +354,8 @@ describe("/warden-setup", () => {
 				assert.deepEqual(installedPackages, ["npm:context-mode"]);
 				const report = String(ctx.ui.notify.mock.calls.at(-1)?.arguments[0]);
 				assert.match(report, /Installed: npm:context-mode/);
+				assert.match(report, /MCP: Added context-mode/);
+				assert.doesNotMatch(report, /context-mode MCP/);
 				assert.match(report, /Removed: npm:pi-caveman/);
 				assert.match(report, /Saved: do not warn for missing dependencies/);
 				assert.match(report, /Saved: nerd glyphs enabled/);
@@ -360,10 +376,7 @@ describe("/warden-setup", () => {
 				hasUI: true,
 				customResult: {
 					action: "update",
-					choices: [
-						{ pkg: "npm:pi-caveman", checked: true },
-						{ pkg: "npm:context-mode", checked: false },
-					],
+					choices: choicesWithChecked(["npm:pi-caveman"]),
 					suppressMissingWarnings: false,
 					useNerdGlyphs: false,
 				},
@@ -375,6 +388,144 @@ describe("/warden-setup", () => {
 				String(ctx.ui.notify.mock.calls.at(-1)?.arguments[0]),
 				/exit 7/,
 			);
+		});
+	});
+
+	it("writes MCP config after successful dependency install", async () => {
+		await withTestSettings({ packages: [] }, async () => {
+			const installPackage = mock.fn(async () => ({
+				code: 0,
+				stdout: "installed",
+				stderr: "",
+			}));
+			const removePackage = mock.fn(async () => ({
+				code: 0,
+				stdout: "",
+				stderr: "",
+			}));
+			const ctx = createCtx({ hasUI: true });
+
+			const summary = await applySetupUpdate(
+				ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
+				{
+					choices: choicesWithChecked(["npm:context-mode"]),
+					suppressMissingWarnings: false,
+					useNerdGlyphs: false,
+				},
+				installPackage,
+				removePackage,
+			);
+
+			assert.equal("failed" in summary, true);
+			if ("failed" in summary) {
+				assert.deepEqual(summary.failed, []);
+				assert.deepEqual(summary.mcpAdded, ["context-mode"]);
+			}
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				mcpServers: { "context-mode": { command: "context-mode" } },
+			});
+		});
+	});
+
+	it("does not write MCP config when only preferences change", async () => {
+		await withTestSettings(
+			{ packages: ["npm:context-mode"], piWarden: {} },
+			async () => {
+				const command = mock.fn(async () => ({
+					code: 0,
+					stdout: "",
+					stderr: "",
+				}));
+				const ctx = createCtx({ hasUI: true });
+
+				const summary = await applySetupUpdate(
+					ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
+					{
+						choices: choicesWithChecked(["npm:context-mode"]),
+						suppressMissingWarnings: true,
+						useNerdGlyphs: false,
+					},
+					command,
+					command,
+				);
+
+				assert.equal("failed" in summary, true);
+				assert.equal(existsSync(getMcpJsonPath()), false);
+				assert.equal(command.mock.calls.length, 0);
+			},
+		);
+	});
+
+	it("reports MCP write failure as settings failure", async () => {
+		await withTestSettings({ packages: [] }, async () => {
+			writeFileSync(getMcpJsonPath(), "{not json", "utf-8");
+			const command = mock.fn(async () => ({
+				code: 0,
+				stdout: "installed",
+				stderr: "",
+			}));
+			const ctx = createCtx({ hasUI: true });
+
+			const summary = await applySetupUpdate(
+				ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
+				{
+					choices: choicesWithChecked(["npm:context-mode"]),
+					suppressMissingWarnings: false,
+					useNerdGlyphs: false,
+				},
+				command,
+				command,
+			);
+
+			assert.equal("failed" in summary, true);
+			if ("failed" in summary) {
+				assert.deepEqual(
+					summary.failed.map((failure) => failure.operation),
+					["settings"],
+				);
+				assert.equal(summary.failed[0]?.pkg, "mcp.json");
+				assert.match(summary.failed[0]?.error ?? "", /mcp\.json/);
+			}
+		});
+	});
+
+	it("removes managed MCP entry after dependency removal", async () => {
+		await withTestSettings({ packages: ["npm:context-mode"] }, async () => {
+			writeFileSync(
+				getMcpJsonPath(),
+				JSON.stringify({
+					mcpServers: {
+						"context-mode": { command: "context-mode", custom: "keep" },
+					},
+				}),
+				"utf-8",
+			);
+			const command = mock.fn(async () => ({
+				code: 0,
+				stdout: "removed",
+				stderr: "",
+			}));
+			const ctx = createCtx({ hasUI: true });
+
+			const summary = await applySetupUpdate(
+				ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
+				{
+					choices: choicesWithChecked([]),
+					suppressMissingWarnings: false,
+					useNerdGlyphs: false,
+				},
+				command,
+				command,
+			);
+
+			assert.equal("failed" in summary, true);
+			if ("failed" in summary) {
+				assert.deepEqual(summary.failed, []);
+				assert.deepEqual(summary.mcpRemoved, ["context-mode"]);
+			}
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				mcpServers: {},
+			});
 		});
 	});
 });

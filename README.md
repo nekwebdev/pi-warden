@@ -22,6 +22,7 @@ Run:
 
 - `npm:pi-caveman`
 - `npm:context-mode`
+- `npm:pi-mcp-adapter`
 
 Dependency rows show desired canonical configuration plus detected source state:
 
@@ -32,6 +33,8 @@ Dependency rows show desired canonical configuration plus detected source state:
 Use ↑/↓ to move, Space/Enter to toggle mutable rows or the warning preference, and Update to apply choices. Update installs checked missing canonical packages with `pi install`, removes unchecked installed canonical packages with `pi remove`, and saves the "Do not warn for missing dependencies" preference when Pi settings are valid. The warning toggle defaults off and suppresses only missing-dependency warnings, not corrupt settings errors.
 
 After any successful install or remove, restart Pi so external package changes load.
+
+Pi Warden preserves existing Pi configuration and only writes its namespaced settings under `piWarden`. When setup installs or removes external packages, it may also add or remove managed MCP server entries in the sibling `mcp.json` file (for example `mcpServers.context-mode.command = "context-mode"`). Unrelated MCP servers and unknown fields are preserved.
 
 ## Package resources
 
@@ -58,4 +61,4 @@ Use `/bootstrap` for fresh setup guidance after package resources load.
 
 ## Safety
 
-Setup is explicit-update-first. It reads Pi settings to detect external packages and warning preference state, but it does not run `pi install`, run `pi remove`, or mutate Pi Warden settings until you choose Update. Pi owns package persistence after each successful install or remove. Pi Warden only writes its namespaced `piWarden.doNotWarnForMissingDependencies` preference when the settings file is valid.
+Setup is explicit-update-first. It reads Pi settings to detect external packages and warning preference state, but it does not run `pi install`, run `pi remove`, or mutate Pi Warden settings until you choose Update. Pi owns package persistence after each successful install or remove. Pi Warden only writes its namespaced `piWarden.doNotWarnForMissingDependencies` preference and adds/removes managed MCP server entries when relevant config files are valid.

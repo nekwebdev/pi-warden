@@ -5,14 +5,17 @@ import {
 	SETUP_COMMAND,
 	STDERR_SNIPPET_CHARS,
 } from "./constants.js";
+import type { McpServerConfig } from "./external-deps.js";
 import type { ExternalDependencyStatus } from "./package-checks.js";
 import { getExternalDependencyStatuses } from "./package-checks.js";
 import { spawnPiInstall, spawnPiRemove } from "./pi-installer.js";
 import { showSetupPanel, type SetupPanelUI } from "./setup-panel.js";
 import {
+	formatMcpJsonError,
 	formatPiAgentSettingsError,
 	getPiWardenSettings,
 	toErrorMessage,
+	writeMcpServerChanges,
 	writePiWardenSettings,
 } from "./utils.js";
 
@@ -49,6 +52,8 @@ type PackageAction = {
 type SetupUpdateSummary = {
 	readonly installed: string[];
 	readonly removed: string[];
+	readonly mcpAdded: string[];
+	readonly mcpRemoved: string[];
 	readonly failed: Array<{
 		readonly operation: PackageAction["operation"] | "settings";
 		readonly pkg: string;
@@ -152,6 +157,8 @@ export async function applySetupUpdate(
 	const actions = buildPackageActions(revalidated.statuses, request.choices);
 	const installed: string[] = [];
 	const removed: string[] = [];
+	const mcpAdded: string[] = [];
+	const mcpRemoved: string[] = [];
 	const failed: SetupUpdateSummary["failed"] = [];
 
 	for (const action of actions) {
@@ -183,6 +190,34 @@ export async function applySetupUpdate(
 	}
 
 	const currentSettings = getPiWardenSettings(revalidated.settings);
+
+	if (installed.length > 0 || removed.length > 0) {
+		const mcpChanges = collectMcpServerChangesForSetupUpdate(
+			revalidated.statuses,
+			installed,
+			removed,
+		);
+		if (
+			Object.keys(mcpChanges.add).length > 0 ||
+			mcpChanges.remove.length > 0
+		) {
+			const result = writeMcpServerChanges({
+				add: mcpChanges.add,
+				remove: mcpChanges.remove,
+			});
+			if (result.ok) {
+				mcpAdded.push(...mcpChanges.addedNames);
+				mcpRemoved.push(...mcpChanges.removedNames);
+			} else {
+				failed.push({
+					operation: "settings",
+					pkg: "mcp.json",
+					error: formatMcpJsonError(result.mcpError),
+				});
+			}
+		}
+	}
+
 	const currentPreference =
 		currentSettings.doNotWarnForMissingDependencies === true;
 	const currentGlyphPref = currentSettings.useNerdGlyphs === true;
@@ -229,6 +264,8 @@ export async function applySetupUpdate(
 	return {
 		installed,
 		removed,
+		mcpAdded,
+		mcpRemoved,
 		failed,
 		preferenceUpdated,
 		preferenceValueAfter,
@@ -258,12 +295,51 @@ export function buildPackageActions(
 	return actions;
 }
 
+function collectMcpServerChangesForSetupUpdate(
+	statuses: readonly ExternalDependencyStatus[],
+	installed: readonly string[],
+	removed: readonly string[],
+): {
+	readonly add: Record<string, McpServerConfig>;
+	readonly remove: string[];
+	readonly addedNames: string[];
+	readonly removedNames: string[];
+} {
+	const installedPkgs = new Set(installed);
+	const removedPkgs = new Set(removed);
+	const add: Record<string, McpServerConfig> = {};
+	const remove: string[] = [];
+	const addedNames: string[] = [];
+	const removedNames: string[] = [];
+
+	for (const status of statuses) {
+		if (!status.dependency.mcp) continue;
+		const serverNames = Object.keys(status.dependency.mcp.servers);
+		if (removedPkgs.has(status.dependency.pkg)) {
+			remove.push(...serverNames);
+			removedNames.push(...serverNames);
+			continue;
+		}
+
+		const isInstalledAfterUpdate =
+			installedPkgs.has(status.dependency.pkg) || status.installed;
+		if (!isInstalledAfterUpdate) continue;
+		Object.assign(add, status.dependency.mcp.servers);
+		if (installedPkgs.has(status.dependency.pkg))
+			addedNames.push(...serverNames);
+	}
+
+	return { add, remove, addedNames, removedNames };
+}
+
 export function buildUpdateReport(summary: SetupUpdateSummary): string {
 	const lines: string[] = [];
 	if (summary.installed.length > 0)
 		lines.push(`✓ Installed: ${summary.installed.join(", ")}`);
 	if (summary.removed.length > 0)
 		lines.push(`✓ Removed: ${summary.removed.join(", ")}`);
+	for (const name of summary.mcpAdded) lines.push(`✓ MCP: Added ${name}`);
+	for (const name of summary.mcpRemoved) lines.push(`✓ MCP: Removed ${name}`);
 	if (summary.preferenceUpdated) {
 		lines.push(
 			summary.preferenceValueAfter
