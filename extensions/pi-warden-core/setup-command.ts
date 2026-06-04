@@ -38,6 +38,7 @@ export type SetupDependencyChoice = {
 export type SetupUpdateRequest = {
 	readonly choices: readonly SetupDependencyChoice[];
 	readonly suppressMissingWarnings: boolean;
+	readonly useNerdGlyphs: boolean;
 };
 
 type PackageAction = {
@@ -55,10 +56,11 @@ type SetupUpdateSummary = {
 	}>;
 	readonly preferenceUpdated: boolean;
 	readonly preferenceValueAfter: boolean;
+	readonly glyphPreferenceUpdated: boolean;
+	readonly glyphPreferenceValueAfter: boolean;
 };
 
 const MSG_INTERACTIVE_ONLY = `/${SETUP_COMMAND} requires interactive mode`;
-const MSG_CANCELLED = `/${SETUP_COMMAND} cancelled`;
 const MSG_RESTART =
 	"Restart your Pi session to load newly installed external packages.";
 const MSG_SETTINGS_ERROR_PREFIX = `${DISPLAY_NAME} setup cannot read Pi settings`;
@@ -112,16 +114,14 @@ async function handleSetupCommand(
 		return;
 	}
 
+	const piWarden = getPiWardenSettings(previewResult.settings);
 	const panelResult = await showSetupPanel(
 		ctx.ui,
 		previewResult.statuses,
-		getPiWardenSettings(previewResult.settings)
-			.doNotWarnForMissingDependencies === true,
+		piWarden.doNotWarnForMissingDependencies === true,
+		piWarden.useNerdGlyphs === true,
 	);
-	if (panelResult.action === "cancel") {
-		ctx.ui.notify(MSG_CANCELLED, "info");
-		return;
-	}
+	if (panelResult.action === "cancel") return;
 
 	const updateResult = await applySetupUpdate(
 		ctx.ui,
@@ -182,20 +182,45 @@ export async function applySetupUpdate(
 		}
 	}
 
+	const currentSettings = getPiWardenSettings(revalidated.settings);
 	const currentPreference =
-		getPiWardenSettings(revalidated.settings)
-			.doNotWarnForMissingDependencies === true;
+		currentSettings.doNotWarnForMissingDependencies === true;
+	const currentGlyphPref = currentSettings.useNerdGlyphs === true;
+	const preferenceChanged =
+		currentPreference !== request.suppressMissingWarnings;
+	const glyphPreferenceChanged = currentGlyphPref !== request.useNerdGlyphs;
 	let preferenceUpdated = false;
-	if (currentPreference !== request.suppressMissingWarnings) {
+	let preferenceValueAfter = currentPreference;
+	let glyphPreferenceUpdated = false;
+	let glyphPreferenceValueAfter = currentGlyphPref;
+
+	if (preferenceChanged || glyphPreferenceChanged) {
 		const result = writePiWardenSettings({
-			doNotWarnForMissingDependencies: request.suppressMissingWarnings,
+			...(preferenceChanged
+				? { doNotWarnForMissingDependencies: request.suppressMissingWarnings }
+				: {}),
+			...(glyphPreferenceChanged
+				? { useNerdGlyphs: request.useNerdGlyphs }
+				: {}),
 		});
 		if (result.ok) {
-			preferenceUpdated = true;
+			if (preferenceChanged) {
+				preferenceUpdated = true;
+				preferenceValueAfter = request.suppressMissingWarnings;
+			}
+			if (glyphPreferenceChanged) {
+				glyphPreferenceUpdated = true;
+				glyphPreferenceValueAfter = request.useNerdGlyphs;
+			}
 		} else {
 			failed.push({
 				operation: "settings",
-				pkg: "piWarden.doNotWarnForMissingDependencies",
+				pkg:
+					preferenceChanged && glyphPreferenceChanged
+						? "piWarden"
+						: preferenceChanged
+							? "piWarden.doNotWarnForMissingDependencies"
+							: "piWarden.useNerdGlyphs",
 				error: formatPiAgentSettingsError(result.settingsError),
 			});
 		}
@@ -206,7 +231,9 @@ export async function applySetupUpdate(
 		removed,
 		failed,
 		preferenceUpdated,
-		preferenceValueAfter: request.suppressMissingWarnings,
+		preferenceValueAfter,
+		glyphPreferenceUpdated,
+		glyphPreferenceValueAfter,
 	};
 }
 
@@ -242,6 +269,13 @@ export function buildUpdateReport(summary: SetupUpdateSummary): string {
 			summary.preferenceValueAfter
 				? "✓ Saved: do not warn for missing dependencies"
 				: "✓ Saved: warn for missing dependencies",
+		);
+	}
+	if (summary.glyphPreferenceUpdated) {
+		lines.push(
+			summary.glyphPreferenceValueAfter
+				? "✓ Saved: nerd glyphs enabled"
+				: "✓ Saved: nerd glyphs disabled",
 		);
 	}
 	if (summary.failed.length > 0) {

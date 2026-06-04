@@ -206,10 +206,7 @@ describe("/warden-setup", () => {
 
 				assert.equal(ctx.ui.confirm.mock.calls.length, 0);
 				assert.equal(ctx.ui.custom.mock.calls.length, 1);
-				assert.match(
-					String(ctx.ui.notify.mock.calls.at(-1)?.arguments[0]),
-					/cancelled/,
-				);
+				assert.equal(ctx.ui.notify.mock.calls.length, 0);
 			},
 		);
 	});
@@ -267,6 +264,7 @@ describe("/warden-setup", () => {
 							{ pkg: "npm:context-mode", checked: true },
 						],
 						suppressMissingWarnings: true,
+						useNerdGlyphs: true,
 					},
 					installPackage,
 					removePackage,
@@ -277,13 +275,21 @@ describe("/warden-setup", () => {
 					removed: ["npm:pi-caveman"],
 					failed: [],
 					preferenceUpdated: true,
+					preferenceValueAfter: true,
+					glyphPreferenceUpdated: true,
+					glyphPreferenceValueAfter: true,
 				});
 				assert.deepEqual(installedPackages, ["npm:context-mode"]);
 				assert.deepEqual(removedPackages, ["npm:pi-caveman"]);
+				const settingsContents = readFileSync(
+					getPiAgentSettingsPath(),
+					"utf-8",
+				);
 				assert.match(
-					readFileSync(getPiAgentSettingsPath(), "utf-8"),
+					settingsContents,
 					/"doNotWarnForMissingDependencies": true/,
 				);
+				assert.match(settingsContents, /"useNerdGlyphs": true/);
 			},
 		);
 	});
@@ -324,6 +330,7 @@ describe("/warden-setup", () => {
 							{ pkg: "npm:context-mode", checked: true },
 						],
 						suppressMissingWarnings: true,
+						useNerdGlyphs: true,
 					},
 				});
 
@@ -335,6 +342,7 @@ describe("/warden-setup", () => {
 				assert.match(report, /Installed: npm:context-mode/);
 				assert.match(report, /Removed: npm:pi-caveman/);
 				assert.match(report, /Saved: do not warn for missing dependencies/);
+				assert.match(report, /Saved: nerd glyphs enabled/);
 			},
 		);
 	});
@@ -357,6 +365,7 @@ describe("/warden-setup", () => {
 						{ pkg: "npm:context-mode", checked: false },
 					],
 					suppressMissingWarnings: false,
+					useNerdGlyphs: false,
 				},
 			});
 

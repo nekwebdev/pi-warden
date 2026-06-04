@@ -131,9 +131,16 @@ describe("getPiAgentSettingsPath", () => {
 		assert.deepEqual(
 			getPiWardenSettings({
 				packages: [],
-				piWarden: { doNotWarnForMissingDependencies: true },
+				piWarden: {
+					doNotWarnForMissingDependencies: true,
+					useNerdGlyphs: true,
+				},
 			}),
-			{ doNotWarnForMissingDependencies: true },
+			{ doNotWarnForMissingDependencies: true, useNerdGlyphs: true },
+		);
+		assert.deepEqual(
+			getPiWardenSettings({ packages: [], piWarden: { useNerdGlyphs: false } }),
+			{ useNerdGlyphs: false },
 		);
 		assert.deepEqual(getPiWardenSettings({ packages: [], piWarden: true }), {});
 		assert.deepEqual(getPiWardenSettings(undefined), {});
@@ -149,6 +156,7 @@ describe("getPiAgentSettingsPath", () => {
 			() => {
 				const result = writePiWardenSettings({
 					doNotWarnForMissingDependencies: true,
+					useNerdGlyphs: true,
 				});
 
 				assert.deepEqual(result, { ok: true });
@@ -161,6 +169,7 @@ describe("getPiAgentSettingsPath", () => {
 					piWarden: {
 						existing: "value",
 						doNotWarnForMissingDependencies: true,
+						useNerdGlyphs: true,
 					},
 				});
 			},
