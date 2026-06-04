@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import {
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -427,7 +426,43 @@ describe("/warden-setup", () => {
 		});
 	});
 
-	it("does not write MCP config when only preferences change", async () => {
+	it("creates MCP config directory for fresh missing settings path", async () => {
+		await withTestSettings(undefined, async () => {
+			const installPackage = mock.fn(async () => ({
+				code: 0,
+				stdout: "installed",
+				stderr: "",
+			}));
+			const removePackage = mock.fn(async () => ({
+				code: 0,
+				stdout: "",
+				stderr: "",
+			}));
+			const ctx = createCtx({ hasUI: true });
+
+			const summary = await applySetupUpdate(
+				ctx.ui as unknown as Parameters<typeof applySetupUpdate>[0],
+				{
+					choices: choicesWithChecked(["npm:context-mode"]),
+					suppressMissingWarnings: false,
+					useNerdGlyphs: false,
+				},
+				installPackage,
+				removePackage,
+			);
+
+			assert.equal("failed" in summary, true);
+			if ("failed" in summary) {
+				assert.deepEqual(summary.failed, []);
+				assert.deepEqual(summary.mcpAdded, ["context-mode"]);
+			}
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				mcpServers: { "context-mode": { command: "context-mode" } },
+			});
+		});
+	});
+
+	it("repairs missing MCP config for already-installed dependency", async () => {
 		await withTestSettings(
 			{ packages: ["npm:context-mode"], piWarden: {} },
 			async () => {
@@ -450,7 +485,13 @@ describe("/warden-setup", () => {
 				);
 
 				assert.equal("failed" in summary, true);
-				assert.equal(existsSync(getMcpJsonPath()), false);
+				if ("failed" in summary) {
+					assert.deepEqual(summary.failed, []);
+					assert.deepEqual(summary.mcpAdded, ["context-mode"]);
+				}
+				assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+					mcpServers: { "context-mode": { command: "context-mode" } },
+				});
 				assert.equal(command.mock.calls.length, 0);
 			},
 		);
@@ -489,7 +530,7 @@ describe("/warden-setup", () => {
 		});
 	});
 
-	it("removes managed MCP entry after dependency removal", async () => {
+	it("keeps MCP entry after dependency removal", async () => {
 		await withTestSettings({ packages: ["npm:context-mode"] }, async () => {
 			writeFileSync(
 				getMcpJsonPath(),
@@ -521,10 +562,12 @@ describe("/warden-setup", () => {
 			assert.equal("failed" in summary, true);
 			if ("failed" in summary) {
 				assert.deepEqual(summary.failed, []);
-				assert.deepEqual(summary.mcpRemoved, ["context-mode"]);
+				assert.deepEqual(summary.mcpRemoved, []);
 			}
 			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
-				mcpServers: {},
+				mcpServers: {
+					"context-mode": { command: "context-mode", custom: "keep" },
+				},
 			});
 		});
 	});

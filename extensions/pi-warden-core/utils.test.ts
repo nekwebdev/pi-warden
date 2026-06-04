@@ -265,7 +265,7 @@ describe("getPiAgentSettingsPath", () => {
 		});
 	});
 
-	it("writes MCP servers while preserving unknown top-level and server fields", () => {
+	it("does not overwrite existing same-name MCP servers", () => {
 		withTempSettings({ packages: [] }, () => {
 			writeFileSync(
 				getMcpJsonPath(),
@@ -289,7 +289,7 @@ describe("getPiAgentSettingsPath", () => {
 				mcpServers: {
 					existing: { command: "custom" },
 					"context-mode": {
-						command: "context-mode",
+						command: "old",
 						custom: "keep",
 					},
 				},
@@ -297,7 +297,7 @@ describe("getPiAgentSettingsPath", () => {
 		});
 	});
 
-	it("removes MCP servers while preserving unrelated config", () => {
+	it("ignores MCP removal requests while preserving config", () => {
 		withTempSettings({ packages: [] }, () => {
 			writeFileSync(
 				getMcpJsonPath(),
@@ -305,7 +305,7 @@ describe("getPiAgentSettingsPath", () => {
 					unknownTopLevel: true,
 					mcpServers: {
 						existing: { command: "custom" },
-						"context-mode": { command: "context-mode", custom: "remove" },
+						"context-mode": { command: "context-mode", custom: "keep" },
 					},
 				}),
 				"utf-8",
@@ -318,6 +318,7 @@ describe("getPiAgentSettingsPath", () => {
 				unknownTopLevel: true,
 				mcpServers: {
 					existing: { command: "custom" },
+					"context-mode": { command: "context-mode", custom: "keep" },
 				},
 			});
 		});

@@ -34,7 +34,7 @@ Use ↑/↓ to move, Space/Enter to toggle mutable rows or the warning preferenc
 
 After any successful install or remove, restart Pi so external package changes load.
 
-Pi Warden preserves existing Pi configuration and only writes its namespaced settings under `piWarden`. When setup installs or removes external packages, it may also add or remove managed MCP server entries in the sibling `mcp.json` file (for example `mcpServers.context-mode.command = "context-mode"`). Unrelated MCP servers and unknown fields are preserved.
+Pi Warden preserves existing Pi configuration and only writes its namespaced settings under `piWarden`. Setup can add missing managed MCP server entries in the sibling `mcp.json` file (for example `mcpServers.context-mode.command = "context-mode"`) for installed dependencies. Existing MCP servers, same-name user entries, unknown fields, and MCP entries left after package removal are preserved.
 
 ## Package resources
 
@@ -61,4 +61,4 @@ Use `/bootstrap` for fresh setup guidance after package resources load.
 
 ## Safety
 
-Setup is explicit-update-first. It reads Pi settings to detect external packages and warning preference state, but it does not run `pi install`, run `pi remove`, or mutate Pi Warden settings until you choose Update. Pi owns package persistence after each successful install or remove. Pi Warden only writes its namespaced `piWarden.doNotWarnForMissingDependencies` preference and adds/removes managed MCP server entries when relevant config files are valid.
+Setup is explicit-update-first. It reads Pi settings to detect external packages and warning preference state, but it does not run `pi install`, run `pi remove`, or mutate Pi Warden settings until you choose Update. Pi owns package persistence after each successful install or remove. Pi Warden only writes its namespaced `piWarden.doNotWarnForMissingDependencies` preference and adds missing managed MCP server entries when relevant config files are valid; it does not remove MCP server entries.

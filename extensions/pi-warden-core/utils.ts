@@ -1,4 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { PI_AGENT_SETTINGS_RELATIVE } from "./constants.js";
@@ -38,8 +45,10 @@ export type PiAgentSettingsWriteResult =
 	| { readonly ok: true }
 	| { readonly ok: false; readonly settingsError: PiAgentSettingsError };
 
+export type PersistedMcpServerConfig = Record<string, unknown>;
+
 export interface McpJson {
-	readonly mcpServers: Record<string, McpServerConfig>;
+	readonly mcpServers: Record<string, PersistedMcpServerConfig>;
 	readonly [key: string]: unknown;
 }
 
@@ -282,7 +291,7 @@ export function readMcpJson(): McpJsonReadResult {
 		ok: true,
 		config: {
 			...parsed,
-			mcpServers: mcpServers as Record<string, McpServerConfig>,
+			mcpServers: mcpServers as Record<string, PersistedMcpServerConfig>,
 		},
 	};
 }
@@ -305,19 +314,14 @@ export function writeMcpServerChanges(
 	const remove = changes.remove ?? [];
 	if (!result.ok && Object.keys(add).length === 0) return { ok: true };
 
+	void remove;
+
 	const current = result.ok ? result.config : { mcpServers: {} };
 	const nextServers: Record<string, unknown> = { ...current.mcpServers };
 
-	for (const name of remove) delete nextServers[name];
-
 	for (const [name, desired] of Object.entries(add)) {
-		const existing = isPlainObject(current.mcpServers[name])
-			? current.mcpServers[name]
-			: {};
-		nextServers[name] = {
-			...existing,
-			...desired,
-		};
+		if (isPlainObject(current.mcpServers[name])) continue;
+		nextServers[name] = desired;
 	}
 
 	const next = {
@@ -325,20 +329,22 @@ export function writeMcpServerChanges(
 		mcpServers: nextServers,
 	};
 
+	let tempPath: string | undefined;
+	const mcpPath = getMcpJsonPath();
 	try {
-		writeFileSync(
-			getMcpJsonPath(),
-			`${JSON.stringify(next, null, 2)}\n`,
-			"utf-8",
-		);
+		mkdirSync(dirname(mcpPath), { recursive: true });
+		tempPath = `${mcpPath}.${process.pid}.${Date.now()}.tmp`;
+		writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+		renameSync(tempPath, mcpPath);
 		return { ok: true };
 	} catch (error) {
+		if (tempPath) rmSync(tempPath, { force: true });
 		return {
 			ok: false,
 			mcpError: {
 				ok: false,
 				kind: "unreadable",
-				path: getMcpJsonPath(),
+				path: mcpPath,
 				message: toErrorMessage(error),
 			},
 		};

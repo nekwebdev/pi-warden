@@ -14,6 +14,7 @@ import {
 	formatMcpJsonError,
 	formatPiAgentSettingsError,
 	getPiWardenSettings,
+	readMcpJson,
 	toErrorMessage,
 	writeMcpServerChanges,
 	writePiWardenSettings,
@@ -125,6 +126,7 @@ async function handleSetupCommand(
 		previewResult.statuses,
 		piWarden.doNotWarnForMissingDependencies === true,
 		piWarden.useNerdGlyphs === true,
+		hasPendingMcpServerChanges(previewResult.statuses),
 	);
 	if (panelResult.action === "cancel") return;
 
@@ -191,30 +193,21 @@ export async function applySetupUpdate(
 
 	const currentSettings = getPiWardenSettings(revalidated.settings);
 
-	if (installed.length > 0 || removed.length > 0) {
-		const mcpChanges = collectMcpServerChangesForSetupUpdate(
-			revalidated.statuses,
-			installed,
-			removed,
-		);
-		if (
-			Object.keys(mcpChanges.add).length > 0 ||
-			mcpChanges.remove.length > 0
-		) {
-			const result = writeMcpServerChanges({
-				add: mcpChanges.add,
-				remove: mcpChanges.remove,
+	const mcpChanges = collectMcpServerChangesForSetupUpdate(
+		revalidated.statuses,
+		installed,
+		removed,
+	);
+	if (Object.keys(mcpChanges.add).length > 0) {
+		const result = writeMcpServerChanges({ add: mcpChanges.add });
+		if (result.ok) {
+			mcpAdded.push(...mcpChanges.addedNames);
+		} else {
+			failed.push({
+				operation: "settings",
+				pkg: "mcp.json",
+				error: formatMcpJsonError(result.mcpError),
 			});
-			if (result.ok) {
-				mcpAdded.push(...mcpChanges.addedNames);
-				mcpRemoved.push(...mcpChanges.removedNames);
-			} else {
-				failed.push({
-					operation: "settings",
-					pkg: "mcp.json",
-					error: formatMcpJsonError(result.mcpError),
-				});
-			}
 		}
 	}
 
@@ -295,41 +288,51 @@ export function buildPackageActions(
 	return actions;
 }
 
+function hasPendingMcpServerChanges(
+	statuses: readonly ExternalDependencyStatus[],
+): boolean {
+	return (
+		Object.keys(collectMcpServerChangesForSetupUpdate(statuses, [], []).add)
+			.length > 0
+	);
+}
+
 function collectMcpServerChangesForSetupUpdate(
 	statuses: readonly ExternalDependencyStatus[],
 	installed: readonly string[],
 	removed: readonly string[],
 ): {
 	readonly add: Record<string, McpServerConfig>;
-	readonly remove: string[];
 	readonly addedNames: string[];
-	readonly removedNames: string[];
 } {
 	const installedPkgs = new Set(installed);
 	const removedPkgs = new Set(removed);
-	const add: Record<string, McpServerConfig> = {};
-	const remove: string[] = [];
-	const addedNames: string[] = [];
-	const removedNames: string[] = [];
+	const desired: Record<string, McpServerConfig> = {};
 
 	for (const status of statuses) {
 		if (!status.dependency.mcp) continue;
-		const serverNames = Object.keys(status.dependency.mcp.servers);
-		if (removedPkgs.has(status.dependency.pkg)) {
-			remove.push(...serverNames);
-			removedNames.push(...serverNames);
-			continue;
-		}
-
+		if (removedPkgs.has(status.dependency.pkg)) continue;
 		const isInstalledAfterUpdate =
 			installedPkgs.has(status.dependency.pkg) || status.installed;
 		if (!isInstalledAfterUpdate) continue;
-		Object.assign(add, status.dependency.mcp.servers);
-		if (installedPkgs.has(status.dependency.pkg))
-			addedNames.push(...serverNames);
+		Object.assign(desired, status.dependency.mcp.servers);
 	}
 
-	return { add, remove, addedNames, removedNames };
+	const desiredNames = Object.keys(desired);
+	if (desiredNames.length === 0) return { add: {}, addedNames: [] };
+
+	const current = readMcpJson();
+	if (!current.ok && current.kind !== "missing")
+		return { add: desired, addedNames: desiredNames };
+
+	const existing = current.ok ? current.config.mcpServers : {};
+	const add: Record<string, McpServerConfig> = {};
+	for (const [name, server] of Object.entries(desired)) {
+		if (name in existing) continue;
+		add[name] = server;
+	}
+
+	return { add, addedNames: Object.keys(add) };
 }
 
 export function buildUpdateReport(summary: SetupUpdateSummary): string {
