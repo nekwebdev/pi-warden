@@ -1,7 +1,15 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PI_AGENT_SETTINGS_RELATIVE } from "./constants.js";
+import type { McpServerConfig } from "./external-deps.js";
 
 export interface PiAgentSettingsResult {
 	readonly settings: Record<string, unknown>;
@@ -37,6 +45,33 @@ export type PiAgentSettingsWriteResult =
 	| { readonly ok: true }
 	| { readonly ok: false; readonly settingsError: PiAgentSettingsError };
 
+export type PersistedMcpServerConfig = Record<string, unknown>;
+
+export interface McpJson {
+	readonly mcpServers: Record<string, PersistedMcpServerConfig>;
+	readonly [key: string]: unknown;
+}
+
+export type McpJsonReadResult =
+	| { readonly ok: true; readonly config: McpJson }
+	| {
+			readonly ok: false;
+			readonly kind: PiAgentSettingsErrorKind;
+			readonly path: string;
+			readonly message: string;
+	  };
+
+export type McpJsonError = Extract<McpJsonReadResult, { readonly ok: false }>;
+
+export type McpJsonWriteResult =
+	| { readonly ok: true }
+	| { readonly ok: false; readonly mcpError: McpJsonError };
+
+export type McpServerChanges = {
+	readonly add?: Record<string, McpServerConfig>;
+	readonly remove?: readonly string[];
+};
+
 export function getPiAgentSettingsPath(): string {
 	if (process.env.PI_WARDEN_TEST_HOME) {
 		return join(process.env.PI_WARDEN_TEST_HOME, ...PI_AGENT_SETTINGS_RELATIVE);
@@ -47,6 +82,14 @@ export function getPiAgentSettingsPath(): string {
 	}
 
 	return join(homedir(), ...PI_AGENT_SETTINGS_RELATIVE);
+}
+
+export function getPiAgentSettingsDir(): string {
+	return dirname(getPiAgentSettingsPath());
+}
+
+export function getMcpJsonPath(): string {
+	return join(getPiAgentSettingsDir(), "mcp.json");
 }
 
 export function isPlainObject(
@@ -62,6 +105,10 @@ export function toErrorMessage(error: unknown): string {
 export function formatPiAgentSettingsError(
 	error: PiAgentSettingsError,
 ): string {
+	return `${error.path}: ${error.message}`;
+}
+
+export function formatMcpJsonError(error: McpJsonError): string {
 	return `${error.path}: ${error.message}`;
 }
 
@@ -175,4 +222,131 @@ export function readPiAgentSettings(): PiAgentSettingsReadResult {
 	}
 
 	return { ok: true, settings: parsed, packages: parsed.packages };
+}
+
+export function readMcpJson(): McpJsonReadResult {
+	const path = getMcpJsonPath();
+	if (!existsSync(path)) {
+		return {
+			ok: false,
+			kind: "missing",
+			path,
+			message: "mcp.json file does not exist",
+		};
+	}
+
+	let contents: string;
+	try {
+		contents = readFileSync(path, "utf-8");
+	} catch (error) {
+		return {
+			ok: false,
+			kind: "unreadable",
+			path,
+			message: toErrorMessage(error),
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(contents);
+	} catch (error) {
+		return {
+			ok: false,
+			kind: "invalid-json",
+			path,
+			message: toErrorMessage(error),
+		};
+	}
+
+	if (!isPlainObject(parsed)) {
+		return {
+			ok: false,
+			kind: "invalid-shape",
+			path,
+			message: "mcp.json root must be an object",
+		};
+	}
+
+	const mcpServers = "mcpServers" in parsed ? parsed.mcpServers : {};
+	if (!isPlainObject(mcpServers)) {
+		return {
+			ok: false,
+			kind: "invalid-shape",
+			path,
+			message: "mcp.json mcpServers must be an object",
+		};
+	}
+	for (const [name, server] of Object.entries(mcpServers)) {
+		if (isPlainObject(server)) continue;
+		return {
+			ok: false,
+			kind: "invalid-shape",
+			path,
+			message: `mcp.json mcpServers.${name} must be an object`,
+		};
+	}
+
+	return {
+		ok: true,
+		config: {
+			...parsed,
+			mcpServers: mcpServers as Record<string, PersistedMcpServerConfig>,
+		},
+	};
+}
+
+export function writeMcpServers(
+	servers: Record<string, McpServerConfig>,
+): McpJsonWriteResult {
+	return writeMcpServerChanges({ add: servers });
+}
+
+export function writeMcpServerChanges(
+	changes: McpServerChanges,
+): McpJsonWriteResult {
+	const result = readMcpJson();
+	if (!result.ok && result.kind !== "missing") {
+		return { ok: false, mcpError: result };
+	}
+
+	const add = changes.add ?? {};
+	const remove = changes.remove ?? [];
+	if (!result.ok && Object.keys(add).length === 0) return { ok: true };
+
+	void remove;
+
+	const current = result.ok ? result.config : { mcpServers: {} };
+	const nextServers: Record<string, unknown> = { ...current.mcpServers };
+
+	for (const [name, desired] of Object.entries(add)) {
+		if (isPlainObject(current.mcpServers[name])) continue;
+		nextServers[name] = desired;
+	}
+
+	const next = {
+		...current,
+		mcpServers: nextServers,
+	};
+
+	let tempPath: string | undefined;
+	const mcpPath = getMcpJsonPath();
+	try {
+		mkdirSync(dirname(mcpPath), { recursive: true });
+		tempPath = `${mcpPath}.${process.pid}.${Date.now()}.tmp`;
+		writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+		renameSync(tempPath, mcpPath);
+		return { ok: true };
+	} catch (error) {
+		if (tempPath) rmSync(tempPath, { force: true });
+		return {
+			ok: false,
+			mcpError: {
+				ok: false,
+				kind: "unreadable",
+				path: mcpPath,
+				message: toErrorMessage(error),
+			},
+		};
+	}
 }

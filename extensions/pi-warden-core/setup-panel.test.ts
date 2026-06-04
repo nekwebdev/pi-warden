@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it, mock } from "node:test";
+import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
 import { getExternalDependencyStatuses } from "./package-checks.js";
 import { showSetupPanel, type SetupPanelUI } from "./setup-panel.js";
 import { getPiAgentSettingsPath } from "./utils.js";
@@ -80,11 +81,23 @@ describe("setup panel", () => {
 								undefined,
 								resolve,
 							);
+							const rendered =
+								(component as { render?: (width: number) => string[] })
+									.render?.(120)
+									.join("\n") ?? "";
+							for (const dependency of EXTERNAL_DEPENDENCIES) {
+								assert.equal(
+									rendered.includes(dependency.pkg),
+									true,
+									`${dependency.pkg} should render in setup panel`,
+								);
+							}
 							component.handleInput?.(" ");
 							component.handleInput?.("\x1b[B");
 							component.handleInput?.(" ");
-							component.handleInput?.("\x1b[B");
-							component.handleInput?.("\x1b[B");
+							for (let i = 0; i < EXTERNAL_DEPENDENCIES.length; i++) {
+								component.handleInput?.("\x1b[B");
+							}
 							component.handleInput?.("\r");
 						});
 					}),
@@ -97,12 +110,15 @@ describe("setup panel", () => {
 					false,
 				);
 
+				const expectedChecked = new Set(
+					EXTERNAL_DEPENDENCIES.slice(0, 2).map((dependency) => dependency.pkg),
+				);
 				assert.deepEqual(result, {
 					action: "update",
-					choices: [
-						{ pkg: "npm:pi-caveman", checked: true },
-						{ pkg: "npm:context-mode", checked: true },
-					],
+					choices: EXTERNAL_DEPENDENCIES.map((dependency) => ({
+						pkg: dependency.pkg,
+						checked: expectedChecked.has(dependency.pkg),
+					})),
 					suppressMissingWarnings: false,
 					useNerdGlyphs: false,
 				});
@@ -263,6 +279,46 @@ describe("setup panel", () => {
 
 			assert.deepEqual(await showSetupPanel(ui, [], false, false), {
 				action: "cancel",
+			});
+		});
+	});
+
+	it("allows Update when only MCP repair is pending", async () => {
+		await withTestSettings({ packages: ["npm:context-mode"] }, async () => {
+			const statusesResult = getExternalDependencyStatuses();
+			assert.equal(statusesResult.ok, true);
+			const ui: SetupPanelUI = {
+				custom: mock.fn(async (factory) => {
+					return await new Promise((resolve) => {
+						const component = factory(
+							{ requestRender: mock.fn() },
+							plainTheme,
+							undefined,
+							resolve,
+						);
+						for (let i = 0; i < EXTERNAL_DEPENDENCIES.length + 1; i++)
+							component.handleInput?.("\x1b[B");
+						component.handleInput?.("\r");
+					});
+				}),
+			};
+
+			const result = await showSetupPanel(
+				ui,
+				statusesResult.ok ? statusesResult.statuses : [],
+				false,
+				false,
+				true,
+			);
+
+			assert.deepEqual(result, {
+				action: "update",
+				choices: EXTERNAL_DEPENDENCIES.map((dependency) => ({
+					pkg: dependency.pkg,
+					checked: dependency.pkg === "npm:context-mode",
+				})),
+				suppressMissingWarnings: false,
+				useNerdGlyphs: false,
 			});
 		});
 	});

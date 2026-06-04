@@ -76,6 +76,7 @@ export async function showSetupPanel(
 	statuses: readonly ExternalDependencyStatus[],
 	initialSuppressMissingWarnings: boolean,
 	initialUseNerdGlyphs = false,
+	initialHasMcpServerChanges = false,
 ): Promise<SetupPanelResult> {
 	let lastTermHeight: number | undefined;
 
@@ -139,6 +140,7 @@ export async function showSetupPanel(
 			}
 
 			function hasPendingChanges(): boolean {
+				if (initialHasMcpServerChanges) return true;
 				return statuses.some((status) => {
 					if (!status.mutable) return false;
 					const checked = checkedByPkg.get(status.dependency.pkg) === true;

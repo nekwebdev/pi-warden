@@ -75,22 +75,16 @@ describe("findMissingExternalDependencies", () => {
 
 	it("returns all statuses as mutable missing when settings are missing", () => {
 		withTestSettings(undefined, () => {
-			assert.deepEqual(dependencyStatuses(), [
-				{
-					pkg: "npm:pi-caveman",
+			assert.deepEqual(
+				dependencyStatuses(),
+				EXTERNAL_DEPENDENCIES.map((dependency) => ({
+					pkg: dependency.pkg,
 					installed: false,
 					kind: "missing",
 					mutable: true,
 					matchedSource: undefined,
-				},
-				{
-					pkg: "npm:context-mode",
-					installed: false,
-					kind: "missing",
-					mutable: true,
-					matchedSource: undefined,
-				},
-			]);
+				})),
+			);
 		});
 	});
 
@@ -115,7 +109,11 @@ describe("findMissingExternalDependencies", () => {
 	it("distinguishes canonical packages from accepted user-managed sources", () => {
 		withTestSettings(
 			{
-				packages: ["npm:pi-caveman", "git:github.com/mksglu/context-mode"],
+				packages: [
+					"npm:pi-caveman",
+					"git:github.com/mksglu/context-mode",
+					"git:github.com/nekwebdev/pi-mcp-adapter",
+				],
 			},
 			() => {
 				assert.deepEqual(dependencyStatuses(), [
@@ -133,6 +131,13 @@ describe("findMissingExternalDependencies", () => {
 						mutable: false,
 						matchedSource: "git:github.com/mksglu/context-mode",
 					},
+					{
+						pkg: "npm:pi-mcp-adapter",
+						installed: true,
+						kind: "accepted",
+						mutable: false,
+						matchedSource: "git:github.com/nekwebdev/pi-mcp-adapter",
+					},
 				]);
 			},
 		);
@@ -146,6 +151,7 @@ describe("findMissingExternalDependencies", () => {
 					1,
 					{ source: "git:github.com/jonjonrankin/pi-caveman" },
 					"npm:context-mode",
+					{ source: "git:github.com/nekwebdev/pi-mcp-adapter" },
 				],
 			},
 			() => {
@@ -163,6 +169,7 @@ describe("findMissingExternalDependencies", () => {
 				packages: [
 					"https://github.com/jonjonrankin/pi-caveman.git",
 					"../vendor/context-mode",
+					"../vendor/pi-mcp-adapter",
 				],
 			},
 			() => {
@@ -172,7 +179,7 @@ describe("findMissingExternalDependencies", () => {
 				});
 				assert.deepEqual(
 					dependencyStatuses().map((status) => status.kind),
-					["accepted", "accepted"],
+					["accepted", "accepted", "accepted"],
 				);
 			},
 		);
@@ -182,10 +189,10 @@ describe("findMissingExternalDependencies", () => {
 		withTestSettings(
 			{ packages: ["npm:pi-caveman-plus", "../vendor/context-mode-extra"] },
 			() => {
-				assert.deepEqual(missingPackages(), [
-					"npm:pi-caveman",
-					"npm:context-mode",
-				]);
+				assert.deepEqual(
+					missingPackages(),
+					EXTERNAL_DEPENDENCIES.map((dependency) => dependency.pkg),
+				);
 			},
 		);
 	});
@@ -198,14 +205,21 @@ describe("findMissingExternalDependencies", () => {
 			"https://github.com/jonjonrankin/pi-caveman/extra",
 		]) {
 			withTestSettings({ packages: [source, "npm:context-mode"] }, () => {
-				assert.deepEqual(missingPackages(), ["npm:pi-caveman"]);
+				assert.deepEqual(
+					missingPackages(),
+					EXTERNAL_DEPENDENCIES.map((dependency) => dependency.pkg).filter(
+						(pkg) => pkg !== "npm:context-mode",
+					),
+				);
 			});
 		}
 	});
 
 	it("returns empty list when all external packages are configured", () => {
 		withTestSettings(
-			{ packages: ["npm:pi-caveman", "npm:context-mode"] },
+			{
+				packages: EXTERNAL_DEPENDENCIES.map((dependency) => dependency.pkg),
+			},
 			() => {
 				assert.deepEqual(findMissingExternalDependencies(), {
 					ok: true,

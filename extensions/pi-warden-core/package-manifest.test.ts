@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -54,8 +55,9 @@ describe("package pi resources", () => {
 		);
 		assert.match(body, /\/warden-setup/);
 		assert.match(body, /setup control panel|control panel Update/i);
-		assert.match(body, /npm:pi-caveman/);
-		assert.match(body, /npm:context-mode/);
+		for (const dependency of EXTERNAL_DEPENDENCIES) {
+			assert.equal(body.includes(dependency.pkg), true);
+		}
 		assert.match(body, /restart Pi/i);
 		assert.match(
 			body,

@@ -11,9 +11,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	getMcpJsonPath,
+	getPiAgentSettingsDir,
 	getPiAgentSettingsPath,
 	getPiWardenSettings,
+	readMcpJson,
 	readPiAgentSettings,
+	writeMcpServerChanges,
+	writeMcpServers,
 	writePiWardenSettings,
 } from "./utils.js";
 
@@ -185,6 +190,159 @@ describe("getPiAgentSettingsPath", () => {
 			assert.equal(result.ok, false);
 			if (!result.ok) assert.equal(result.settingsError.kind, "missing");
 			assert.equal(existsSync(getPiAgentSettingsPath()), false);
+		});
+	});
+
+	it("places mcp.json next to settings.json", () => {
+		withTempSettings({ packages: [] }, () => {
+			assert.equal(getPiAgentSettingsDir(), dirname(getPiAgentSettingsPath()));
+			assert.equal(getMcpJsonPath(), join(getPiAgentSettingsDir(), "mcp.json"));
+		});
+	});
+
+	it("returns missing MCP state when mcp.json is absent", () => {
+		withTempSettings({ packages: [] }, () => {
+			const result = readMcpJson();
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.kind, "missing");
+		});
+	});
+
+	it("returns invalid-json MCP state for corrupt JSON", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(getMcpJsonPath(), "{not json", "utf-8");
+
+			const result = readMcpJson();
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.kind, "invalid-json");
+		});
+	});
+
+	it("returns invalid-shape MCP state when mcpServers is not an object", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(
+				getMcpJsonPath(),
+				JSON.stringify({ mcpServers: [] }),
+				"utf-8",
+			);
+
+			const result = readMcpJson();
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.kind, "invalid-shape");
+		});
+	});
+
+	it("returns invalid-shape MCP state when a server entry is not an object", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(
+				getMcpJsonPath(),
+				JSON.stringify({ mcpServers: { bad: [] } }),
+				"utf-8",
+			);
+
+			const result = readMcpJson();
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.kind, "invalid-shape");
+		});
+	});
+
+	it("writes MCP servers when mcp.json is missing", () => {
+		withTempSettings({ packages: [] }, () => {
+			const result = writeMcpServers({
+				"context-mode": { command: "context-mode" },
+			});
+
+			assert.deepEqual(result, { ok: true });
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				mcpServers: {
+					"context-mode": { command: "context-mode" },
+				},
+			});
+		});
+	});
+
+	it("does not overwrite existing same-name MCP servers", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(
+				getMcpJsonPath(),
+				JSON.stringify({
+					unknownTopLevel: true,
+					mcpServers: {
+						existing: { command: "custom" },
+						"context-mode": { command: "old", custom: "keep" },
+					},
+				}),
+				"utf-8",
+			);
+
+			const result = writeMcpServers({
+				"context-mode": { command: "context-mode" },
+			});
+
+			assert.deepEqual(result, { ok: true });
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				unknownTopLevel: true,
+				mcpServers: {
+					existing: { command: "custom" },
+					"context-mode": {
+						command: "old",
+						custom: "keep",
+					},
+				},
+			});
+		});
+	});
+
+	it("ignores MCP removal requests while preserving config", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(
+				getMcpJsonPath(),
+				JSON.stringify({
+					unknownTopLevel: true,
+					mcpServers: {
+						existing: { command: "custom" },
+						"context-mode": { command: "context-mode", custom: "keep" },
+					},
+				}),
+				"utf-8",
+			);
+
+			const result = writeMcpServerChanges({ remove: ["context-mode"] });
+
+			assert.deepEqual(result, { ok: true });
+			assert.deepEqual(JSON.parse(readFileSync(getMcpJsonPath(), "utf-8")), {
+				unknownTopLevel: true,
+				mcpServers: {
+					existing: { command: "custom" },
+					"context-mode": { command: "context-mode", custom: "keep" },
+				},
+			});
+		});
+	});
+
+	it("treats remove-only MCP changes as successful when mcp.json is missing", () => {
+		withTempSettings({ packages: [] }, () => {
+			const result = writeMcpServerChanges({ remove: ["context-mode"] });
+
+			assert.deepEqual(result, { ok: true });
+			assert.equal(existsSync(getMcpJsonPath()), false);
+		});
+	});
+
+	it("refuses MCP writes when existing mcp.json is invalid", () => {
+		withTempSettings({ packages: [] }, () => {
+			writeFileSync(getMcpJsonPath(), "{not json", "utf-8");
+
+			const result = writeMcpServers({
+				"context-mode": { command: "context-mode" },
+			});
+
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.equal(result.mcpError.kind, "invalid-json");
 		});
 	});
 });

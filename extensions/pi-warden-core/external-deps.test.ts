@@ -3,10 +3,10 @@ import { describe, it } from "node:test";
 import { EXTERNAL_DEPENDENCIES } from "./external-deps.js";
 
 describe("EXTERNAL_DEPENDENCIES", () => {
-	it("lists pi-caveman and context-mode as external install targets", () => {
+	it("lists pi-caveman, context-mode, and pi-mcp-adapter as external install targets", () => {
 		assert.deepEqual(
 			EXTERNAL_DEPENDENCIES.map((dependency) => dependency.pkg),
-			["npm:pi-caveman", "npm:context-mode"],
+			["npm:pi-caveman", "npm:context-mode", "npm:pi-mcp-adapter"],
 		);
 	});
 
@@ -17,6 +17,9 @@ describe("EXTERNAL_DEPENDENCIES", () => {
 		const contextMode = EXTERNAL_DEPENDENCIES.find(
 			(dependency) => dependency.pkg === "npm:context-mode",
 		);
+		const piMcpAdapter = EXTERNAL_DEPENDENCIES.find(
+			(dependency) => dependency.pkg === "npm:pi-mcp-adapter",
+		);
 
 		assert.deepEqual(caveman?.acceptedSources, [
 			"git:github.com/jonjonrankin/pi-caveman",
@@ -26,9 +29,17 @@ describe("EXTERNAL_DEPENDENCIES", () => {
 			"git:github.com/mksglu/context-mode",
 			"local:context-mode",
 		]);
+		assert.deepEqual(piMcpAdapter?.acceptedSources, [
+			"git:github.com/nekwebdev/pi-mcp-adapter",
+			"local:pi-mcp-adapter",
+		]);
 		assert.equal(caveman?.acceptedSources.includes("npm:pi-caveman"), false);
 		assert.equal(
 			contextMode?.acceptedSources.includes("npm:context-mode"),
+			false,
+		);
+		assert.equal(
+			piMcpAdapter?.acceptedSources.includes("npm:pi-mcp-adapter"),
 			false,
 		);
 	});
@@ -40,5 +51,27 @@ describe("EXTERNAL_DEPENDENCIES", () => {
 
 		assert.match(EXTERNAL_DEPENDENCIES[0].provides, /caveman/i);
 		assert.match(EXTERNAL_DEPENDENCIES[1].provides, /context-mode/i);
+		assert.equal(
+			EXTERNAL_DEPENDENCIES[2].provides,
+			"Use MCP servers with Pi without burning your context window.",
+		);
+	});
+
+	it("declares context-mode MCP server metadata", () => {
+		const contextMode = EXTERNAL_DEPENDENCIES.find(
+			(dependency) => dependency.pkg === "npm:context-mode",
+		);
+		const piMcpAdapter = EXTERNAL_DEPENDENCIES.find(
+			(dependency) => dependency.pkg === "npm:pi-mcp-adapter",
+		);
+
+		assert.deepEqual(contextMode?.mcp, {
+			servers: {
+				"context-mode": {
+					command: "context-mode",
+				},
+			},
+		});
+		assert.equal(piMcpAdapter?.mcp, undefined);
 	});
 });
